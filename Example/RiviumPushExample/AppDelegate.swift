@@ -41,11 +41,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
+    static var isVoipEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "voip_enabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "voip_enabled") }
+    }
+
     static func initializeSDK() {
         guard let apiKey = savedApiKey, !apiKey.isEmpty else { return }
 
         let config = RiviumPushConfig.builder(apiKey: apiKey)
-            .usePushKit(false)
+            .usePushKit(isVoipEnabled)
             .showNotificationInForeground(true)
             .autoConnect(true)
             .build()

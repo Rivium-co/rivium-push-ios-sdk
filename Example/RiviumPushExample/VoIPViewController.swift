@@ -310,10 +310,15 @@ class VoIPViewController: UIViewController {
             .build()
 
         RiviumPush.shared.initialize(config: config)
-        RiviumPush.shared.register(userId: AppDelegate.savedUserId)
 
-        addLog("SDK re-initialized with VoIP: \(toggle.isOn)")
-        updateVoIPStatus()
+        // Delay registration to allow PushKit token to arrive first
+        let delaySeconds = toggle.isOn ? 3.0 : 0.5
+        addLog("SDK re-initialized with VoIP: \(toggle.isOn), registering in \(delaySeconds)s...")
+        DispatchQueue.main.asyncAfter(deadline: .now() + delaySeconds) { [weak self] in
+            RiviumPush.shared.register(userId: AppDelegate.savedUserId)
+            self?.addLog("Registration sent")
+            self?.updateVoIPStatus()
+        }
     }
 
     @objc private func simulateIncomingCall() {

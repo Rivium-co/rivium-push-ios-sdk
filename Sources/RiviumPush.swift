@@ -102,11 +102,14 @@ public class RiviumPush: NSObject {
             }
 
             if config.usePushKit {
+                self.voipToken = nil // Reset so we detect new token
                 self.registerForVoIP(userId: userId, metadata: metadata)
             } else if config.useAPNs {
+                self.voipToken = nil
                 self.registerForAPNs(userId: userId, metadata: metadata)
             } else {
-                self.registerDevice(userId: userId, metadata: metadata, pushToken: nil, apnsToken: nil)
+                self.voipToken = nil
+                self.registerDevice(userId: userId, metadata: metadata, pushToken: "", apnsToken: nil)
             }
         }
     }
@@ -214,7 +217,9 @@ public class RiviumPush: NSObject {
         let userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).pendingUserId")
         let metadata = UserDefaults.standard.dictionary(forKey: "\(RiviumPush.PREFS_NAME).pendingMetadata") as? [String: String]
 
-        registerDevice(userId: userId, metadata: metadata, pushToken: nil, apnsToken: token)
+        // If not in VoIP mode, clear the VoIP token on server
+        let clearVoip = !(config?.usePushKit ?? false)
+        registerDevice(userId: userId, metadata: metadata, pushToken: clearVoip ? "" : nil, apnsToken: token)
 
         // Clean up
         RiviumPushDispatch.io {
