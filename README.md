@@ -220,8 +220,8 @@ let voipConfig = VoipConfig(appName: "MyApp", supportsVideo: true)
 RiviumPushVoip.shared.initialize(config: voipConfig)
 RiviumPushVoip.shared.delegate = self
 
-// Enable VoIP in RiviumPush config
-let config = RiviumPushConfig.builder(apiKey: "your_key")
+// Enable VoIP in RiviumPush config (same API key from Rivium Console)
+let config = RiviumPushConfig.builder(apiKey: "rv_live_your_api_key")
     .usePushKit(true)
     .build()
 ```
