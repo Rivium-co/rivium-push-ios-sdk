@@ -238,6 +238,20 @@ extension AppDelegate: RiviumPushVoipDelegate {
 }
 ```
 
+Send push with data to trigger VoIP incoming call:
+
+```json
+{
+  "type": "voip_call",
+  "callerName": "John Doe",
+  "callerId": "user_456",
+  "callerAvatar": "https://example.com/avatar.jpg",
+  "callType": "video"
+}
+```
+
+The `type: "voip_call"` is the system trigger (fixed). Caller data keys are configurable via VoIP SDK config.
+
 The Push SDK works independently without VoIP. VoIP is only needed for apps with real calling features.
 
 ## Example App

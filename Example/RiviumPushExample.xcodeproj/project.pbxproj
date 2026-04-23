@@ -323,7 +323,7 @@
 				CODE_SIGN_ENTITLEMENTS = RiviumPushExample/RiviumPushExample.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = CBVW8L9SU3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RiviumPushExample/Info.plist;
@@ -357,7 +357,7 @@
 				CODE_SIGN_ENTITLEMENTS = RiviumPushExample/RiviumPushExample.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = CBVW8L9SU3;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = RiviumPushExample/Info.plist;
@@ -419,7 +419,7 @@
 			repositoryURL = "https://github.com/Rivium-co/rivium-push-voip-ios-sdk.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 0.1.1;
+				minimumVersion = 0.1.2;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
