@@ -16,10 +16,11 @@
 		A1000006001 /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000006000 /* SettingsViewController.swift */; };
 		A1000007001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000007000 /* Assets.xcassets */; };
 		A1000008001 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A1000008000 /* LaunchScreen.storyboard */; };
-		A1000009001 /* RiviumPush in Frameworks */ = {isa = PBXBuildFile; productRef = A1000009000 /* RiviumPush */; };
 		A100001C001 /* InAppMessagesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100001C000 /* InAppMessagesViewController.swift */; };
 		A100001D001 /* ABTestingViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A100001D000 /* ABTestingViewController.swift */; };
 		A8AEFAF92F96E69700ED45EB /* RiviumPush in Frameworks */ = {isa = PBXBuildFile; productRef = A8AEFAF82F96E69700ED45EB /* RiviumPush */; };
+		A8EF57A92F9985F2004A973C /* VoIPViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8EF57A82F9985F2004A973C /* VoIPViewController.swift */; };
+		A8EF57AC2F9995D9004A973C /* RiviumPushVoip in Frameworks */ = {isa = PBXBuildFile; productRef = A8EF57AB2F9995D9004A973C /* RiviumPushVoip */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 		A100000C000 /* RiviumPushExample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RiviumPushExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A100001C000 /* InAppMessagesViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppMessagesViewController.swift; sourceTree = "<group>"; };
 		A100001D000 /* ABTestingViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ABTestingViewController.swift; sourceTree = "<group>"; };
+		A8EF57A82F9985F2004A973C /* VoIPViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoIPViewController.swift; sourceTree = "<group>"; };
 		D3458C0E1235C4775E6F0F5C /* OnboardingViewController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OnboardingViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -44,8 +46,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A8EF57AC2F9995D9004A973C /* RiviumPushVoip in Frameworks */,
 				A8AEFAF92F96E69700ED45EB /* RiviumPush in Frameworks */,
-				A1000009001 /* RiviumPush in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -63,6 +65,7 @@
 		A100000F000 /* RiviumPushExample */ = {
 			isa = PBXGroup;
 			children = (
+				A8EF57A82F9985F2004A973C /* VoIPViewController.swift */,
 				A1000001000 /* AppDelegate.swift */,
 				A1000002000 /* SceneDelegate.swift */,
 				A1000003000 /* MainViewController.swift */,
@@ -105,8 +108,8 @@
 			);
 			name = RiviumPushExample;
 			packageProductDependencies = (
-				A1000009000 /* RiviumPush */,
 				A8AEFAF82F96E69700ED45EB /* RiviumPush */,
+				A8EF57AB2F9995D9004A973C /* RiviumPushVoip */,
 			);
 			productName = RiviumPushExample;
 			productReference = A100000C000 /* RiviumPushExample.app */;
@@ -138,6 +141,7 @@
 			mainGroup = A100000E000;
 			packageReferences = (
 				A8AEFAF72F96E69700ED45EB /* XCLocalSwiftPackageReference "../../RiviumPush" */,
+				A8EF57AA2F9995D9004A973C /* XCRemoteSwiftPackageReference "rivium-push-voip-ios-sdk" */,
 			);
 			productRefGroup = A1000010000 /* Products */;
 			projectDirPath = "";
@@ -169,6 +173,7 @@
 				A1000002001 /* SceneDelegate.swift in Sources */,
 				A1000003001 /* MainViewController.swift in Sources */,
 				A100001C001 /* InAppMessagesViewController.swift in Sources */,
+				A8EF57A92F9985F2004A973C /* VoIPViewController.swift in Sources */,
 				A100001D001 /* ABTestingViewController.swift in Sources */,
 				A1000004001 /* InboxViewController.swift in Sources */,
 				A1000005001 /* InboxDetailViewController.swift in Sources */,
@@ -408,14 +413,27 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCSwiftPackageProductDependency section */
-		A1000009000 /* RiviumPush */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = RiviumPush;
+/* Begin XCRemoteSwiftPackageReference section */
+		A8EF57AA2F9995D9004A973C /* XCRemoteSwiftPackageReference "rivium-push-voip-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Rivium-co/rivium-push-voip-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.1;
+			};
 		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
 		A8AEFAF82F96E69700ED45EB /* RiviumPush */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = A8AEFAF72F96E69700ED45EB /* XCLocalSwiftPackageReference "../../RiviumPush" */;
 			productName = RiviumPush;
+		};
+		A8EF57AB2F9995D9004A973C /* RiviumPushVoip */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A8EF57AA2F9995D9004A973C /* XCRemoteSwiftPackageReference "rivium-push-voip-ios-sdk" */;
+			productName = RiviumPushVoip;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -200,6 +200,46 @@ let config = RiviumPushConfig.builder(apiKey: "your_key")
 - Swift 5.7+
 - Xcode 14+
 
+## VoIP Push (Optional)
+
+For calling apps (Jitsi, WebRTC), add the [RiviumPush VoIP SDK](https://github.com/Rivium-co/rivium-push-voip-ios-sdk):
+
+```swift
+// Swift Package Manager
+.package(url: "https://github.com/Rivium-co/rivium-push-voip-ios-sdk.git", from: "0.1.1")
+
+// CocoaPods
+pod 'RiviumPushVoip', '~> 0.1'
+```
+
+```swift
+import RiviumPushVoip
+
+// Configure
+let voipConfig = VoipConfig(appName: "MyApp", supportsVideo: true)
+RiviumPushVoip.shared.initialize(config: voipConfig)
+RiviumPushVoip.shared.delegate = self
+
+// Enable VoIP in RiviumPush config
+let config = RiviumPushConfig.builder(apiKey: "your_key")
+    .usePushKit(true)
+    .build()
+```
+
+```swift
+extension AppDelegate: RiviumPushVoipDelegate {
+    func voip(_ voip: RiviumPushVoip, didAcceptCall callData: VoipCallData) {
+        // Connect to your calling service
+    }
+
+    func voip(_ voip: RiviumPushVoip, didDeclineCall callData: VoipCallData) {
+        // Handle decline
+    }
+}
+```
+
+The Push SDK works independently without VoIP. VoIP is only needed for apps with real calling features.
+
 ## Example App
 
 The `Example/` folder contains a complete demo app with:
@@ -207,6 +247,7 @@ The `Example/` folder contains a complete demo app with:
 - In-app message triggers
 - Inbox management
 - A/B test variant assignment
+- VoIP calling (toggle on/off)
 - Settings and debugging tools
 
 ## Links

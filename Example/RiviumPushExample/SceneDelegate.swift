@@ -31,6 +31,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
             (InboxViewController(), "Inbox", "tray.fill"),
             (InAppMessagesViewController(), "In-App", "bubble.left.fill"),
             (ABTestingViewController(), "A/B Tests", "flask.fill"),
+            (VoIPViewController(), "VoIP", "phone.fill"),
             (SettingsViewController(), "Settings", "gearshape.fill"),
         ]
 

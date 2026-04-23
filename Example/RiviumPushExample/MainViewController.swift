@@ -34,6 +34,10 @@ class MainViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         updateStatus()
+        // Delayed refresh to catch connection state after re-init
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.updateStatus()
+        }
     }
 
     deinit { NotificationCenter.default.removeObserver(self) }
@@ -159,9 +163,11 @@ class MainViewController: UIViewController {
     }
 
     @objc private func onConnectionChanged(_ n: Notification) {
-        updateStatus()
-        let connected = n.userInfo?["connected"] as? Bool ?? false
-        addLog(connected ? "Connected" : "Disconnected")
+        DispatchQueue.main.async { [weak self] in
+            self?.updateStatus()
+            let connected = n.userInfo?["connected"] as? Bool ?? false
+            self?.addLog(connected ? "Connected" : "Disconnected")
+        }
     }
 
     @objc private func onNotificationTapped(_ n: Notification) {
