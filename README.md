@@ -206,7 +206,7 @@ For calling apps (Jitsi, WebRTC), add the [RiviumPush VoIP SDK](https://github.c
 
 ```swift
 // Swift Package Manager
-.package(url: "https://github.com/Rivium-co/rivium-push-voip-ios-sdk.git", from: "0.1.1")
+.package(url: "https://github.com/Rivium-co/rivium-push-voip-ios-sdk.git", from: "0.1.2")
 
 // CocoaPods
 pod 'RiviumPushVoip', '~> 0.1'
@@ -215,12 +215,12 @@ pod 'RiviumPushVoip', '~> 0.1'
 ```swift
 import RiviumPushVoip
 
-// Configure
+// Initialize VoIP SDK
 let voipConfig = VoipConfig(appName: "MyApp", supportsVideo: true)
 RiviumPushVoip.shared.initialize(config: voipConfig)
 RiviumPushVoip.shared.delegate = self
 
-// Enable VoIP in RiviumPush config (same API key from Rivium Console)
+// Enable VoIP in RiviumPush config
 let config = RiviumPushConfig.builder(apiKey: "rv_live_your_api_key")
     .usePushKit(true)
     .build()
@@ -238,19 +238,23 @@ extension AppDelegate: RiviumPushVoipDelegate {
 }
 ```
 
-Send push with data to trigger VoIP incoming call:
+To trigger an incoming call, send a push with `type: "voip_call"` in the data:
 
 ```json
 {
-  "type": "voip_call",
-  "callerName": "John Doe",
-  "callerId": "user_456",
-  "callerAvatar": "https://example.com/avatar.jpg",
-  "callType": "video"
+  "title": "Incoming Call",
+  "body": "John Doe is calling",
+  "data": {
+    "type": "voip_call",
+    "callerName": "John Doe",
+    "callerId": "user_456",
+    "callerAvatar": "https://example.com/avatar.jpg",
+    "callType": "video"
+  }
 }
 ```
 
-The `type: "voip_call"` is the system trigger (fixed). Caller data keys are configurable via VoIP SDK config.
+The `type: "voip_call"` triggers VoIP delivery (PushKit). Without it, the message is delivered as a regular push notification. See the [VoIP SDK README](https://github.com/Rivium-co/rivium-push-voip-ios-sdk) for full setup guide.
 
 The Push SDK works independently without VoIP. VoIP is only needed for apps with real calling features.
 
