@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDK'
-  s.version          = '0.1.1'
+  s.version          = '0.1.2'
   s.summary          = 'Rivium Push Notification SDK for iOS'
   s.description      = <<-DESC
     Rivium Push is a comprehensive push notification SDK for iOS with support for:
