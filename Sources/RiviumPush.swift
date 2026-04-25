@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UserNotifications
 
 /// Main entry point for Rivium Push SDK
 ///
@@ -13,7 +14,7 @@ import UIKit
 /// RiviumPush.shared.delegate = self
 /// RiviumPush.shared.register()
 /// ```
-public class RiviumPush: NSObject {
+public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private static let TAG = "RiviumPush"
     private static let PREFS_NAME = "co.rivium.push"
     private static let KEY_DEVICE_ID = "deviceId"
@@ -59,6 +60,17 @@ public class RiviumPush: NSObject {
         self.isInitialized = true
 
         Log.d(RiviumPush.TAG, "Initialized with deviceId: \(deviceId ?? "nil"), appId: \(appId ?? "nil")")
+
+        // Set as UNUserNotificationCenter delegate for foreground notification display
+        if config.showNotificationInForeground {
+            DispatchQueue.main.async {
+                let center = UNUserNotificationCenter.current()
+                if center.delegate == nil {
+                    center.delegate = self
+                    Log.d(RiviumPush.TAG, "Set as UNUserNotificationCenter delegate for foreground notifications")
+                }
+            }
+        }
 
         // Check for app update
         checkForAppUpdate()
@@ -726,6 +738,24 @@ public class RiviumPush: NSObject {
         if config?.autoConnect == true && isInitialized {
             connect()
         }
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    /// Show notifications when app is in foreground (APNs-delivered)
+    public func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if config?.showNotificationInForeground == true {
+            completionHandler([.banner, .sound, .badge])
+        } else {
+            completionHandler([])
+        }
+    }
+
+    /// Handle notification tap
+    public func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        handleNotificationResponse(userInfo: userInfo, actionIdentifier: response.actionIdentifier)
+        completionHandler()
     }
 
     private func registerForAPNs(userId: String?, metadata: [String: String]?) {
