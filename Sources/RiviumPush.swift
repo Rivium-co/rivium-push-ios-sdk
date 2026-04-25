@@ -745,7 +745,11 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// Show notifications when app is in foreground (APNs-delivered)
     public func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         if config?.showNotificationInForeground == true {
-            completionHandler([.banner, .sound, .badge])
+            if #available(iOS 14.0, *) {
+                completionHandler([.banner, .sound, .badge])
+            } else {
+                completionHandler([.alert, .sound, .badge])
+            }
         } else {
             completionHandler([])
         }
