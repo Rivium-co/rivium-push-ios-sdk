@@ -36,6 +36,10 @@ internal class ApiClient {
     struct RegisterResponse: Decodable {
         let id: String
         let deviceId: String
+        /// Backend-issued per-install UUID, addressing key for new SDK builds.
+        /// New servers populate this; older servers don't, in which case the
+        /// SDK falls back to the legacy `id` field which is the same value.
+        let subscriptionId: String?
         let appId: String? // App ID from server (first 16 chars of projectId)
         let message: String
         let mqtt: PNGatewayConfig?  // PN Protocol gateway config (named 'mqtt' for backward compatibility)

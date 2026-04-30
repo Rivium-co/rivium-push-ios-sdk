@@ -9,6 +9,7 @@ internal class PNSocketManager: NSObject {
     private let appId: String
     private let deviceId: String
     private let appIdentifier: String
+    private let subscriptionId: String?
     private var hasSubscribedOnce: Bool = false  // Track if initial subscription is done
 
     // Strong reference to connection listener to prevent deallocation
@@ -25,11 +26,12 @@ internal class PNSocketManager: NSObject {
         func pnSocketManager(_ manager: PNSocketManager, didReceiveMessage message: String, channel: String)
     }
 
-    init(config: RiviumPushConfig, appId: String, deviceId: String, appIdentifier: String = "_default") {
+    init(config: RiviumPushConfig, appId: String, deviceId: String, appIdentifier: String = "_default", subscriptionId: String? = nil) {
         self.riviumPushConfig = config
         self.appId = appId
         self.deviceId = deviceId
         self.appIdentifier = appIdentifier
+        self.subscriptionId = subscriptionId
         super.init()
     }
 
@@ -106,33 +108,47 @@ internal class PNSocketManager: NSObject {
     /// On reconnects, PNSocket.resubscribeChannels() handles re-subscribing
     /// from its activeChannels set automatically.
     private func subscribeToChannels() {
-        let deviceChannel = "rivium_push/\(appId)/\(deviceId)/\(appIdentifier)"
+        // Per-install subscription topic — primary delivery channel for every
+        // device-targeted message after the subscriptionId migration.
+        let subscriptionChannel = subscriptionId.map { "rivium_push/\(appId)/sub/\($0)" }
         let broadcastChannel = "rivium_push/\(appId)/broadcast"
 
-        // Create handlers and keep strong references to prevent deallocation
-        let deviceHandler = PNMessageHandler { [weak self] message in
-            guard let self = self else { return }
-            let payload = message.payloadAsString()
-            print("[PNSocketManager] Message received on \(message.channel): \(payload)")
-            self.delegate?.pnSocketManager(self, didReceiveMessage: payload, channel: message.channel)
-        }
-        messageHandlers.append(deviceHandler)
+        // DEPRECATED: legacy device-scoped topic. The backend stopped
+        // publishing here after the subscriptionId migration. Kept subscribed
+        // only to keep older test builds / out-of-tree backends working; will
+        // be removed in a future SDK release.
+        let deviceChannel = "rivium_push/\(appId)/\(deviceId)/\(appIdentifier)"
 
-        let broadcastHandler = PNMessageHandler { [weak self] message in
-            guard let self = self else { return }
-            let payload = message.payloadAsString()
-            print("[PNSocketManager] Message received on \(message.channel): \(payload)")
-            self.delegate?.pnSocketManager(self, didReceiveMessage: payload, channel: message.channel)
+        // Shared message handler factory — strong refs are stored in
+        // messageHandlers to prevent deallocation while the socket is alive.
+        let makeHandler: () -> PNMessageHandler = { [weak self] in
+            return PNMessageHandler { [weak self] message in
+                guard let self = self else { return }
+                let payload = message.payloadAsString()
+                print("[PNSocketManager] Message received on \(message.channel): \(payload)")
+                self.delegate?.pnSocketManager(self, didReceiveMessage: payload, channel: message.channel)
+            }
         }
+
+        if let channel = subscriptionChannel {
+            let subHandler = makeHandler()
+            messageHandlers.append(subHandler)
+            print("[PNSocketManager] Subscribing to \(channel)")
+            socket?.stream(channel, mode: .reliable, listener: subHandler)
+        }
+
+        let broadcastHandler = makeHandler()
         messageHandlers.append(broadcastHandler)
-
-        print("[PNSocketManager] Subscribing to \(deviceChannel)")
-        socket?.stream(deviceChannel, mode: .reliable, listener: deviceHandler)
-
         print("[PNSocketManager] Subscribing to \(broadcastChannel)")
         socket?.stream(broadcastChannel, mode: .reliable, listener: broadcastHandler)
 
-        print("[PNSocketManager] Subscribed to both channels")
+        // Legacy stream — DEPRECATED, see comment above.
+        let deviceHandler = makeHandler()
+        messageHandlers.append(deviceHandler)
+        print("[PNSocketManager] Subscribing to (deprecated) \(deviceChannel)")
+        socket?.stream(deviceChannel, mode: .reliable, listener: deviceHandler)
+
+        print("[PNSocketManager] Subscribed to channels (sub=\(subscriptionChannel != nil), legacy device topic kept for compat)")
     }
 
     var isConnected: Bool {

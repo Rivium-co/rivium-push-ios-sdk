@@ -21,3 +21,6 @@ Package.resolved
 # Sensitive
 *.p8
 *.env
+
+# Claude
+.claude/

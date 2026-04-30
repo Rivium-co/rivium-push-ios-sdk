@@ -18,6 +18,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private static let TAG = "RiviumPush"
     private static let PREFS_NAME = "co.rivium.push"
     private static let KEY_DEVICE_ID = "deviceId"
+    private static let KEY_SUBSCRIPTION_ID = "subscriptionId"
     private static let KEY_APP_VERSION = "appVersion"
     private static let KEY_USER_ID = "userId"
 
@@ -35,6 +36,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private var inboxManager: InboxManager?
 
     private var deviceId: String?
+    private var subscriptionId: String?
     private var voipToken: String?
     private var apnsToken: String?
     private var appId: String?
@@ -54,6 +56,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         self.config = config
         self.apiClient = ApiClient(config: config)
         self.deviceId = getOrCreateDeviceId()
+        // Restore previously-issued subscriptionId so the socket can subscribe to
+        // the new topic immediately on launch — register() will refresh it.
+        self.subscriptionId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_SUBSCRIPTION_ID)")
         // Use saved appId from server if available, otherwise fallback to apiKey prefix
         self.appId = loadSavedAppId() ?? String(config.apiKey.prefix(16))
         self.userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
@@ -84,7 +89,11 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - Registration
 
-    /// Register for push notifications
+    /// Register for push notifications.
+    ///
+    /// If `userId` is nil, the SDK falls back to the persisted userId from a
+    /// previous session (matches OneSignal/Airship). Pass an explicit userId
+    /// only when associating a new identity. Use `clearUserId()` to dissociate.
     /// - Parameters:
     ///   - userId: Optional user identifier
     ///   - metadata: Optional metadata dictionary
@@ -96,7 +105,8 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
-        // Store userId if provided
+        // Store userId if provided; otherwise fall back to the previously
+        // persisted userId restored at init.
         if let userId = userId {
             self.userId = userId
             // Save to UserDefaults on background queue to avoid blocking main thread
@@ -104,6 +114,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
                 UserDefaults.standard.set(userId, forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
             }
         }
+        let effectiveUserId = self.userId
 
         // Request notification permission
         NotificationManager.shared.requestPermission { [weak self] granted in
@@ -115,13 +126,13 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
             if config.usePushKit {
                 self.voipToken = nil // Reset so we detect new token
-                self.registerForVoIP(userId: userId, metadata: metadata)
+                self.registerForVoIP(userId: effectiveUserId, metadata: metadata)
             } else if config.useAPNs {
                 self.voipToken = nil
-                self.registerForAPNs(userId: userId, metadata: metadata)
+                self.registerForAPNs(userId: effectiveUserId, metadata: metadata)
             } else {
                 self.voipToken = nil
-                self.registerDevice(userId: userId, metadata: metadata, pushToken: "", apnsToken: nil)
+                self.registerDevice(userId: effectiveUserId, metadata: metadata, pushToken: "", apnsToken: nil)
             }
         }
     }
@@ -183,8 +194,8 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
         // First time or config changed — create new socket manager
         let appIdentifier = Bundle.main.bundleIdentifier ?? "_default"
-        Log.d(RiviumPush.TAG, "Creating new PNSocketManager with appIdentifier: \(appIdentifier)")
-        socketManager = PNSocketManager(config: config, appId: appId, deviceId: deviceId, appIdentifier: appIdentifier)
+        Log.d(RiviumPush.TAG, "Creating new PNSocketManager with appIdentifier: \(appIdentifier), subscriptionId: \(subscriptionId ?? "nil")")
+        socketManager = PNSocketManager(config: config, appId: appId, deviceId: deviceId, appIdentifier: appIdentifier, subscriptionId: subscriptionId)
         socketManager?.delegate = self
 
         Log.d(RiviumPush.TAG, "Calling socketManager.connect()")
@@ -206,6 +217,20 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// Get current device ID
     public func getDeviceId() -> String? {
         return deviceId
+    }
+
+    /// Get the per-install subscription ID issued by the server during register().
+    /// This is the canonical addressing key for inbox/A-B/in-app calls and the new
+    /// MQTT topic. Returns `nil` until register() succeeds at least once.
+    public func getSubscriptionId() -> String? {
+        return subscriptionId
+    }
+
+    /// Get the currently-stored userId, if any. Survives app restarts —
+    /// matches OneSignal/Airship behaviour. Returns `nil` if `setUserId` has
+    /// never been called (or if `clearUserId` was called since).
+    public func getUserId() -> String? {
+        return userId
     }
 
     /// Get VoIP token (for debugging)
@@ -843,6 +868,15 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
                     Log.d(RiviumPush.TAG, "Using server-provided appId for PN Protocol: \(serverAppId)")
                     // Save appId for future sessions
                     self.saveAppId(serverAppId)
+                }
+
+                // Capture subscriptionId — the per-install UUID — and persist it so
+                // the socket can subscribe to `rivium_push/{appId}/sub/{subscriptionId}`
+                // on the next launch even before a fresh register() lands.
+                if let subId = response.subscriptionId, !subId.isEmpty {
+                    self.subscriptionId = subId
+                    UserDefaults.standard.set(subId, forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_SUBSCRIPTION_ID)")
+                    Log.d(RiviumPush.TAG, "Stored subscriptionId: \(subId)")
                 }
 
                 // Update PN Protocol config from server response (host, port, secure, JWT token)
