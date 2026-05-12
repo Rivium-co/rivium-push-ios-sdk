@@ -706,9 +706,18 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             }
         }
 
-        // Store clicked action if action button was pressed
-        if let actionId = actionIdentifier,
-           actionId != "com.apple.UNNotificationDefaultActionIdentifier",
+        // Determine whether this response was an action button tap (vs.
+        // a tap on the notification body). The system default-action
+        // identifier means "user tapped the notification itself".
+        let isActionButtonTap: Bool = {
+            guard let id = actionIdentifier else { return false }
+            return id != "com.apple.UNNotificationDefaultActionIdentifier"
+        }()
+
+        // Store clicked action if an action button was pressed (kept for
+        // legacy host apps that poll NotificationManager directly).
+        if isActionButtonTap,
+           let actionId = actionIdentifier,
            let actions = riviumPushMessage.actions,
            let action = actions.first(where: { $0.id == actionId }) {
             NotificationManager.shared.setClickedAction(action, message: riviumPushMessage)
@@ -720,7 +729,17 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             // (so it won't show again on restart)
             Log.d(RiviumPush.TAG, "App is running - notifying via delegate, not storing initial message")
             del.riviumPush(self, didReceiveMessage: riviumPushMessage)
-            del.riviumPush(self, didTapNotification: riviumPushMessage)
+            if isActionButtonTap,
+               let actionId = actionIdentifier,
+               let action = riviumPushMessage.actions?.first(where: { $0.id == actionId }) {
+                // Action button taps fire the action delegate method
+                // instead of `didTapNotification`. Without this branch
+                // the host app sees the message but never learns which
+                // button was tapped — silently swallowing every action.
+                del.riviumPush(self, didReceiveNotificationAction: action, forMessage: riviumPushMessage)
+            } else {
+                del.riviumPush(self, didTapNotification: riviumPushMessage)
+            }
         } else {
             // App is NOT running - store for getInitialMessage()
             Log.d(RiviumPush.TAG, "App not running - storing initial message for getInitialMessage()")
