@@ -97,7 +97,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// - Parameters:
     ///   - userId: Optional user identifier
     ///   - metadata: Optional metadata dictionary
-    public func register(userId: String? = nil, metadata: [String: String]? = nil) {
+    public func register(userId: String? = nil, metadata: [String: Any]? = nil) {
         guard let config = config else {
             let error = RiviumPushError.notInitialized
             delegate?.riviumPush(self, didFailWithError: error)
@@ -706,16 +706,13 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             }
         }
 
-        // Determine whether this response was an action button tap (vs.
-        // a tap on the notification body). The system default-action
-        // identifier means "user tapped the notification itself".
+        // The system default-action identifier means a tap on the
+        // notification body, not on an action button.
         let isActionButtonTap: Bool = {
             guard let id = actionIdentifier else { return false }
             return id != "com.apple.UNNotificationDefaultActionIdentifier"
         }()
 
-        // Store clicked action if an action button was pressed (kept for
-        // legacy host apps that poll NotificationManager directly).
         if isActionButtonTap,
            let actionId = actionIdentifier,
            let actions = riviumPushMessage.actions,
@@ -732,10 +729,6 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             if isActionButtonTap,
                let actionId = actionIdentifier,
                let action = riviumPushMessage.actions?.first(where: { $0.id == actionId }) {
-                // Action button taps fire the action delegate method
-                // instead of `didTapNotification`. Without this branch
-                // the host app sees the message but never learns which
-                // button was tapped — silently swallowing every action.
                 del.riviumPush(self, didReceiveNotificationAction: action, forMessage: riviumPushMessage)
             } else {
                 del.riviumPush(self, didTapNotification: riviumPushMessage)
@@ -806,7 +799,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         completionHandler()
     }
 
-    private func registerForAPNs(userId: String?, metadata: [String: String]?) {
+    private func registerForAPNs(userId: String?, metadata: [String: Any]?) {
         // Store registration params for when token arrives
         RiviumPushDispatch.io {
             UserDefaults.standard.set(userId, forKey: "\(RiviumPush.PREFS_NAME).pendingUserId")
@@ -831,7 +824,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func registerForVoIP(userId: String?, metadata: [String: String]?) {
+    private func registerForVoIP(userId: String?, metadata: [String: Any]?) {
         voipManager = VoIPManager()
         voipManager?.delegate = self
         voipManager?.register()
@@ -856,7 +849,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func registerDevice(userId: String?, metadata: [String: String]?, pushToken: String?, apnsToken: String? = nil) {
+    private func registerDevice(userId: String?, metadata: [String: Any]?, pushToken: String?, apnsToken: String? = nil) {
         guard let deviceId = deviceId else {
             let error = RiviumPushError.notInitialized
             delegate?.riviumPush(self, didFailWithError: error)

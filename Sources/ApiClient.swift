@@ -13,15 +13,10 @@ internal class ApiClient {
 
     // MARK: - Request/Response Types
 
-    struct RegisterRequest: Encodable {
-        let deviceId: String
-        let platform: String = "ios"
-        let pushToken: String?
-        let apnsToken: String?
-        let userId: String?
-        let metadata: [String: String]?
-        let appIdentifier: String?
-    }
+    // Register body is built as a plain dictionary so metadata values keep
+    // their native JSON types (number / bool / string). Encodable with
+    // [String: String] would coerce everything to strings and break
+    // dashboard segment operators like >, <, is (boolean).
 
     /// PN Protocol gateway configuration returned from server with JWT token
     struct PNGatewayConfig: Decodable {
@@ -75,7 +70,7 @@ internal class ApiClient {
         pushToken: String?,
         apnsToken: String?,
         userId: String?,
-        metadata: [String: String]?,
+        metadata: [String: Any]?,
         appIdentifier: String? = nil,
         completion: @escaping (Result<RegisterResponse, Error>) -> Void
     ) {
@@ -84,16 +79,17 @@ internal class ApiClient {
             return
         }
 
-        let body = RegisterRequest(
-            deviceId: deviceId,
-            pushToken: pushToken,
-            apnsToken: apnsToken,
-            userId: userId,
-            metadata: metadata,
-            appIdentifier: appIdentifier
-        )
+        var body: [String: Any] = [
+            "deviceId": deviceId,
+            "platform": "ios",
+        ]
+        if let pushToken = pushToken { body["pushToken"] = pushToken }
+        if let apnsToken = apnsToken { body["apnsToken"] = apnsToken }
+        if let userId = userId { body["userId"] = userId }
+        if let appIdentifier = appIdentifier { body["appIdentifier"] = appIdentifier }
+        if let metadata = metadata { body["metadata"] = metadata }
 
-        post(url: url, body: body, completion: completion)
+        postDict(url: url, params: body, completion: completion)
     }
 
     /// Unregister device from server
@@ -407,6 +403,31 @@ internal class ApiClient {
 
         do {
             request.httpBody = try JSONEncoder().encode(body)
+        } catch {
+            DispatchQueue.main.async {
+                completion(.failure(error))
+            }
+            return
+        }
+
+        executeRequest(request, completion: completion)
+    }
+
+    /// POST a `[String: Any]` dict (native JSON types preserved) and decode
+    /// the response into `R`. Use this when the request body carries
+    /// type-heterogeneous values like device metadata.
+    private func postDict<R: Decodable>(
+        url: URL,
+        params: [String: Any],
+        completion: @escaping (Result<R, Error>) -> Void
+    ) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: params)
         } catch {
             DispatchQueue.main.async {
                 completion(.failure(error))
