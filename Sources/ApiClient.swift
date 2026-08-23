@@ -73,6 +73,7 @@ internal class ApiClient {
         metadata: [String: Any]?,
         appIdentifier: String? = nil,
         appVersion: String? = nil,
+        appBuild: Int? = nil,
         osVersion: String? = nil,
         deviceModel: String? = nil,
         language: String? = nil,
@@ -97,6 +98,7 @@ internal class ApiClient {
         // Auto-captured device attributes — sent as top-level fields so the
         // dashboard can offer them as indexed segment filters.
         if let appVersion = appVersion { body["appVersion"] = appVersion }
+        if let appBuild = appBuild { body["appBuild"] = appBuild }
         if let osVersion = osVersion { body["osVersion"] = osVersion }
         if let deviceModel = deviceModel { body["deviceModel"] = deviceModel }
         if let language = language { body["language"] = language }

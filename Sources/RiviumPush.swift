@@ -872,6 +872,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             metadata: metadata,
             appIdentifier: appIdentifier,
             appVersion: attributes.appVersion,
+            appBuild: attributes.appBuild,
             osVersion: attributes.osVersion,
             deviceModel: attributes.deviceModel,
             language: attributes.language,
@@ -1023,6 +1024,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
     struct DeviceAttributes {
         let appVersion: String?
+        let appBuild: Int?
         let osVersion: String?
         let deviceModel: String?
         let language: String?
@@ -1034,10 +1036,11 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// the dashboard can segment by app version, OS, locale, timezone, etc.
     /// without the customer app having to populate metadata manually.
     private static func captureDeviceAttributes() -> DeviceAttributes {
-        // App version — CFBundleShortVersionString is the user-facing "2.0.0"
-        // rather than the build number (CFBundleVersion). Matches what
-        // App Store Connect shows.
+        // App version — CFBundleShortVersionString is the user-facing "2.0.0".
+        // CFBundleVersion is the build number ("18"); coerced to Int, dropped
+        // if it's a dotted form ("1.2.3") that can't be represented as one.
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let appBuild = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String).flatMap { Int($0) }
 
         let osVersion = UIDevice.current.systemVersion
 
@@ -1059,6 +1062,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
         return DeviceAttributes(
             appVersion: appVersion,
+            appBuild: appBuild,
             osVersion: osVersion,
             deviceModel: deviceModel.isEmpty ? nil : deviceModel,
             language: language,
