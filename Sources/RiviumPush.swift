@@ -860,13 +860,23 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         // Pass bundle identifier as appIdentifier for per-app isolation
         let appIdentifier = Bundle.main.bundleIdentifier
 
+        // Auto-captured device attributes — sent as top-level fields so the
+        // dashboard's segment builder can filter on them as preset fields.
+        let attributes = Self.captureDeviceAttributes()
+
         apiClient?.registerDevice(
             deviceId: deviceId,
             pushToken: pushToken,
             apnsToken: apnsToken,
             userId: userId,
             metadata: metadata,
-            appIdentifier: appIdentifier
+            appIdentifier: appIdentifier,
+            appVersion: attributes.appVersion,
+            osVersion: attributes.osVersion,
+            deviceModel: attributes.deviceModel,
+            language: attributes.language,
+            country: attributes.country,
+            timezone: attributes.timezone
         ) { [weak self] result in
             guard let self = self else { return }
 
@@ -1007,6 +1017,54 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         RiviumPushDispatch.io {
             UserDefaults.standard.set(currentVersion, forKey: key)
         }
+    }
+
+    // MARK: - Device Attributes
+
+    struct DeviceAttributes {
+        let appVersion: String?
+        let osVersion: String?
+        let deviceModel: String?
+        let language: String?
+        let country: String?
+        let timezone: String?
+    }
+
+    /// Read platform-native device attributes. Sent on every register() so
+    /// the dashboard can segment by app version, OS, locale, timezone, etc.
+    /// without the customer app having to populate metadata manually.
+    private static func captureDeviceAttributes() -> DeviceAttributes {
+        // App version — CFBundleShortVersionString is the user-facing "2.0.0"
+        // rather than the build number (CFBundleVersion). Matches what
+        // App Store Connect shows.
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+
+        let osVersion = UIDevice.current.systemVersion
+
+        // utsname.machine returns the hardware identifier ("iPhone14,2"),
+        // not a marketing name — deliberate, so the dashboard operator can
+        // filter by exact model without name-mangling.
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let deviceModel = machineMirror.children.reduce(into: "") { partial, element in
+            guard let value = element.value as? Int8, value != 0 else { return }
+            partial.append(Character(UnicodeScalar(UInt8(value))))
+        }
+
+        let locale = Locale.current
+        let language = locale.languageCode
+        let country = locale.regionCode
+        let timezone = TimeZone.current.identifier
+
+        return DeviceAttributes(
+            appVersion: appVersion,
+            osVersion: osVersion,
+            deviceModel: deviceModel.isEmpty ? nil : deviceModel,
+            language: language,
+            country: country,
+            timezone: timezone
+        )
     }
 }
 

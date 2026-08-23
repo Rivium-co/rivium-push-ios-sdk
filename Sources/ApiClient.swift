@@ -72,6 +72,12 @@ internal class ApiClient {
         userId: String?,
         metadata: [String: Any]?,
         appIdentifier: String? = nil,
+        appVersion: String? = nil,
+        osVersion: String? = nil,
+        deviceModel: String? = nil,
+        language: String? = nil,
+        country: String? = nil,
+        timezone: String? = nil,
         completion: @escaping (Result<RegisterResponse, Error>) -> Void
     ) {
         guard let url = URL(string: "\(config.serverUrl)/devices/register") else {
@@ -88,6 +94,14 @@ internal class ApiClient {
         if let userId = userId { body["userId"] = userId }
         if let appIdentifier = appIdentifier { body["appIdentifier"] = appIdentifier }
         if let metadata = metadata { body["metadata"] = metadata }
+        // Auto-captured device attributes — sent as top-level fields so the
+        // dashboard can offer them as indexed segment filters.
+        if let appVersion = appVersion { body["appVersion"] = appVersion }
+        if let osVersion = osVersion { body["osVersion"] = osVersion }
+        if let deviceModel = deviceModel { body["deviceModel"] = deviceModel }
+        if let language = language { body["language"] = language }
+        if let country = country { body["country"] = country }
+        if let timezone = timezone { body["timezone"] = timezone }
 
         postDict(url: url, params: body, completion: completion)
     }
