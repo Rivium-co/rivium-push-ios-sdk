@@ -11,7 +11,15 @@ import UserNotifications
 ///
 /// ## Setup
 ///
-/// 1. Add a Notification Service Extension target to your app.
+/// 1. Add a Notification Service Extension target to your app, and give it the
+///    extension-safe subspec — the full SDK cannot be linked into an extension:
+///
+/// ```ruby
+/// target 'Notification Service Extension' do
+///   pod 'RiviumPushSDK/Extension'
+/// end
+/// ```
+///
 /// 2. Enable the **same App Group** on both the app and the extension.
 /// 3. Pass that group to the SDK in your app:
 ///
