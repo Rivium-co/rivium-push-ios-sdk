@@ -8,8 +8,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     static let apiKeyKey = "RiviumPushSavedApiKey"
     static let userIdKey = "RiviumPushSavedUserId"
 
+    /// Pre-filled so the example runs without going through onboarding.
+    /// Replace with your own key from the Rivium Console.
+    static let defaultApiKey = "rv_live_0a237324063d40769e46b59d2fee1ce6260f77d47d47c5c7"
+
     static var savedApiKey: String? {
-        get { UserDefaults.standard.string(forKey: apiKeyKey) }
+        get { UserDefaults.standard.string(forKey: apiKeyKey) ?? defaultApiKey }
         set { UserDefaults.standard.set(newValue, forKey: apiKeyKey) }
     }
 

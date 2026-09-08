@@ -1,0 +1,26 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.9] - 2026-09-08
+
+### Added
+- Delivery confirmation from a Notification Service Extension. Set `appGroup` in the config and the SDK shares the device identity with the extension, so the server learns a notification actually arrived.
+- `appGroup` on `RiviumPushConfig.builder()`.
+
+### Fixed
+- `RiviumPushServiceExtension` was missing from the Swift Package Manager sources list, so SPM users could not reference it. CocoaPods was unaffected.
+- A VoIP token could linger on the device record when PushKit was disabled.
+
+## [0.1.8] - 2026-08-23
+
+### Added
+- App build number captured alongside app version.
+
+## [0.1.7] - 2026-08-23
+
+### Added
+- Device attributes captured automatically for segment filters.

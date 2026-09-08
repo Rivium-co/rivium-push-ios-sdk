@@ -64,6 +64,11 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         self.userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
         self.isInitialized = true
 
+        // Mirror the device id into the shared App Group so a Notification
+        // Service Extension can confirm delivery. The extension runs in its
+        // own process and cannot read this app's UserDefaults.
+        shareDeviceIdWithExtension()
+
         Log.d(RiviumPush.TAG, "Initialized with deviceId: \(deviceId ?? "nil"), appId: \(appId ?? "nil")")
 
         // Set as UNUserNotificationCenter delegate for foreground notification display
@@ -217,6 +222,19 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// Get current device ID
     public func getDeviceId() -> String? {
         return deviceId
+    }
+
+    /// Publish the device id into the App Group shared with a Notification
+    /// Service Extension, so `RiviumPushServiceExtension` can confirm delivery.
+    /// No-op unless `appGroup` was set in the config.
+    private func shareDeviceIdWithExtension() {
+        guard
+            let appGroup = config?.appGroup,
+            let deviceId = deviceId,
+            let shared = UserDefaults(suiteName: appGroup)
+        else { return }
+
+        shared.set(deviceId, forKey: RiviumPushServiceExtension.sharedDeviceIdKey)
     }
 
     /// Get the per-install subscription ID issued by the server during register().
@@ -860,13 +878,23 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         // Pass bundle identifier as appIdentifier for per-app isolation
         let appIdentifier = Bundle.main.bundleIdentifier
 
+        // With PushKit disabled a VoIP token must never linger on the device
+        // row. "" tells the server to clear it; nil would mean "keep what you
+        // have", which left stale tokens behind on the registration paths that
+        // don't carry one (APNs timeout, MQTT-only fallback). A stale VoIP
+        // token is not harmless: iOS terminates an app that receives a VoIP
+        // push without reporting a CallKit call, and can revoke the
+        // entitlement.
+        let effectivePushToken: String? =
+            (config?.usePushKit ?? false) ? pushToken : ""
+
         // Auto-captured device attributes — sent as top-level fields so the
         // dashboard's segment builder can filter on them as preset fields.
         let attributes = Self.captureDeviceAttributes()
 
         apiClient?.registerDevice(
             deviceId: deviceId,
-            pushToken: pushToken,
+            pushToken: effectivePushToken,
             apnsToken: apnsToken,
             userId: userId,
             metadata: metadata,

@@ -51,6 +51,17 @@ public struct RiviumPushConfig {
     /// Maximum reconnect delay in milliseconds
     public let maxReconnectDelayMs: Int
 
+    /// App Group identifier shared with a Notification Service Extension.
+    ///
+    /// An extension runs in its own process and cannot read the app's
+    /// UserDefaults, so delivery confirmation needs a shared container. Set
+    /// this to the App Group enabled on both targets (e.g.
+    /// "group.com.example.app") and the SDK mirrors the device identity there
+    /// for `RiviumPushServiceExtension` to use.
+    ///
+    /// Leave nil if you are not confirming delivery from an extension.
+    public let appGroup: String?
+
     public init(
         apiKey: String,
         pnHost: String = "",
@@ -64,9 +75,11 @@ public struct RiviumPushConfig {
         autoReconnect: Bool = true,
         maxReconnectAttempts: Int = 0,
         initialReconnectDelayMs: Int = 1000,
-        maxReconnectDelayMs: Int = 60000
+        maxReconnectDelayMs: Int = 60000,
+        appGroup: String? = nil
     ) {
         self.apiKey = apiKey
+        self.appGroup = appGroup
         // Dev server override via Info.plist key "RiviumPushServerURL" (not committed to git)
         if let devUrl = Bundle.main.object(forInfoDictionaryKey: "RiviumPushServerURL") as? String, !devUrl.isEmpty {
             self.serverUrl = devUrl
@@ -122,9 +135,22 @@ public struct RiviumPushConfig {
         private var maxReconnectAttempts: Int = 0
         private var initialReconnectDelayMs: Int = 1000
         private var maxReconnectDelayMs: Int = 60000
+        private var appGroup: String? = nil
 
         public init(apiKey: String) {
             self.apiKey = apiKey
+        }
+
+        /// App Group shared with a Notification Service Extension, enabling
+        /// delivery confirmation (e.g. "group.com.example.app").
+        ///
+        /// An extension runs in its own process and cannot read the app's
+        /// storage, so confirming delivery needs a shared container. Enable the
+        /// same App Group on both targets and pass it here.
+        @discardableResult
+        public func appGroup(_ group: String) -> Builder {
+            self.appGroup = group
+            return self
         }
 
         /// Set custom PN Protocol gateway host for development/testing (normally fetched from server)
@@ -205,7 +231,8 @@ public struct RiviumPushConfig {
                 autoReconnect: autoReconnect,
                 maxReconnectAttempts: maxReconnectAttempts,
                 initialReconnectDelayMs: initialReconnectDelayMs,
-                maxReconnectDelayMs: maxReconnectDelayMs
+                maxReconnectDelayMs: maxReconnectDelayMs,
+                appGroup: appGroup
             )
         }
     }

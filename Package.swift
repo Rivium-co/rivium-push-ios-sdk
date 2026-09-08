@@ -32,6 +32,7 @@ let package = Package(
                 "PNSocketManager.swift",
                 "VoIPManager.swift",
                 "NotificationManager.swift",
+                "RiviumPushServiceExtension.swift",
                 "Utils/RiviumPushDispatch.swift",
                 "Utils/NetworkConfig.swift",
                 "InApp/InAppMessage.swift",
