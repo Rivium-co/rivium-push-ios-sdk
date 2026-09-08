@@ -24,3 +24,9 @@ Package.resolved
 
 # Claude
 .claude/
+
+# Local credential backups — NEVER commit (public repo)
+.secrets-backup/
+**/.gnupg/
+*.gpg
+*.key
