@@ -16,7 +16,7 @@ import UserNotifications
 ///
 /// ```ruby
 /// target 'Notification Service Extension' do
-///   pod 'RiviumPushSDK/Extension'
+///   pod 'RiviumPushSDKExtension'
 /// end
 /// ```
 ///

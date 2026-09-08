@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.11] - 2026-09-09
+
+### Fixed
+- 0.1.10's `RiviumPushSDK/Extension` subspec crashed apps at launch with `Symbol not found: RiviumPushSDK.RiviumPush.shared`. Both subspecs built a framework named `RiviumPushSDK`, so the extension's cut-down copy overwrote the app's when embedded. The extension half now ships as a separate pod, `RiviumPushSDKExtension`, with its own module name.
+
+### Changed
+- **Migration from 0.1.10:** in your extension target, replace `pod 'RiviumPushSDK/Extension'` with `pod 'RiviumPushSDKExtension'`, and `import RiviumPushSDK` with `import RiviumPushSDKExtension`.
+
 ## [0.1.10] - 2026-09-08
 
 ### Fixed

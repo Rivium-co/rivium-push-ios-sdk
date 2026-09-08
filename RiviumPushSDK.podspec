@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDK'
-  s.version          = '0.1.10'
+  s.version          = '0.1.11'
   s.summary          = 'Rivium Push Notification SDK for iOS'
   s.description      = <<-DESC
     Rivium Push is a comprehensive push notification SDK for iOS with support for:
@@ -21,35 +21,16 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '13.0'
   s.swift_version = '5.0'
 
-  s.default_subspecs = 'Core'
+  # Source files - exclude PNProtocol/ since it comes from the PNProtocol pod dependency
+  s.source_files = 'Sources/**/*.swift'
+  s.exclude_files = 'Sources/PNProtocol/**/*'
 
-  # The full SDK, for your app target.
-  s.subspec 'Core' do |ss|
-    # exclude PNProtocol/ since it comes from the PNProtocol pod dependency
-    ss.source_files = 'Sources/**/*.swift'
-    ss.exclude_files = 'Sources/PNProtocol/**/*'
+  # Dependencies
+  s.dependency 'PNProtocol', '~> 0.2'
+  s.dependency 'CocoaMQTT', '~> 2.1'
 
-    ss.dependency 'PNProtocol', '~> 0.2'
-    ss.dependency 'CocoaMQTT', '~> 2.1'
-
-    ss.frameworks = 'UIKit', 'UserNotifications', 'PushKit', 'CallKit'
-  end
-
-  # Delivery confirmation, for a Notification Service Extension target:
-  #
-  #   target 'Notification Service Extension' do
-  #     pod 'RiviumPushSDK/Extension'
-  #   end
-  #
-  # An app extension may not use UIApplication.shared, so linking Core into one
-  # fails to compile. This subspec carries only RiviumPushServiceExtension,
-  # which needs nothing beyond Foundation and UserNotifications, and is built
-  # with APPLICATION_EXTENSION_API_ONLY so that stays true.
-  s.subspec 'Extension' do |ss|
-    ss.source_files = 'Sources/RiviumPushServiceExtension.swift'
-    ss.frameworks = 'UserNotifications'
-    ss.pod_target_xcconfig = { 'APPLICATION_EXTENSION_API_ONLY' => 'YES' }
-  end
+  # Frameworks required
+  s.frameworks = 'UIKit', 'UserNotifications', 'PushKit', 'CallKit'
 
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end
