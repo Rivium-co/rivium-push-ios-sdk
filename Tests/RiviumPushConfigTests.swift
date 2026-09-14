@@ -13,14 +13,6 @@ final class RiviumPushConfigTests: XCTestCase {
         XCTAssertEqual(config.serverUrl, "https://push-api.rivium.co")
     }
 
-    func testBuilder_customServerUrl() {
-        let config = RiviumPushConfig.builder(apiKey: "test_key")
-            .serverUrl("https://custom.api.com")
-            .build()
-
-        XCTAssertEqual(config.serverUrl, "https://custom.api.com")
-    }
-
     func testBuilder_usePushKit() {
         let config = RiviumPushConfig.builder(apiKey: "test_key")
             .usePushKit(true)
@@ -77,7 +69,6 @@ final class RiviumPushConfigTests: XCTestCase {
 
     func testBuilder_chainedConfiguration() {
         let config = RiviumPushConfig.builder(apiKey: "test_key")
-            .serverUrl("https://staging.api.com")
             .usePushKit(false)
             .showNotificationInForeground(true)
             .autoConnect(true)
@@ -86,7 +77,6 @@ final class RiviumPushConfigTests: XCTestCase {
             .build()
 
         XCTAssertEqual(config.apiKey, "test_key")
-        XCTAssertEqual(config.serverUrl, "https://staging.api.com")
         XCTAssertFalse(config.usePushKit)
         XCTAssertTrue(config.showNotificationInForeground)
         XCTAssertTrue(config.autoConnect)
@@ -112,24 +102,6 @@ final class RiviumPushConfigTests: XCTestCase {
     func testServerUrl_defaultValue() {
         let config = RiviumPushConfig.builder(apiKey: "test").build()
         XCTAssertEqual(config.serverUrl, "https://push-api.rivium.co")
-    }
-
-    func testServerUrl_customValue() {
-        let config = RiviumPushConfig.builder(apiKey: "test")
-            .serverUrl("https://api.staging.rivium.co")
-            .build()
-
-        XCTAssertEqual(config.serverUrl, "https://api.staging.rivium.co")
-    }
-
-    func testServerUrl_withTrailingSlash() {
-        // The config should handle URLs regardless of trailing slash
-        let config = RiviumPushConfig.builder(apiKey: "test")
-            .serverUrl("https://api.example.com/")
-            .build()
-
-        // The URL is stored as-is
-        XCTAssertEqual(config.serverUrl, "https://api.example.com/")
     }
 
     // MARK: - Default Values Tests

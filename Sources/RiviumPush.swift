@@ -21,6 +21,12 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private static let KEY_SUBSCRIPTION_ID = "subscriptionId"
     private static let KEY_APP_VERSION = "appVersion"
     private static let KEY_USER_ID = "userId"
+    private static let KEY_HAS_REGISTERED = "hasRegistered"
+    private static let KEY_LAST_REGISTERED_AT = "lastRegisteredAt"
+    private static let KEY_REGISTRATION_FINGERPRINT = "registrationFingerprint"
+
+    /// Version of this SDK, as reported to the Rivium Push backend.
+    public static let sdkVersion: String = RiviumPushSDKInfo.version
 
     /// Shared instance
     public static let shared = RiviumPush()
@@ -43,6 +49,12 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private var userId: String?
     private var isInitialized = false
     private var abTestingManager: ABTestingManager?
+    private var receiptStore: DeliveryReceiptStore?
+
+    /// An explicit register() is in progress; auto refresh stays out of its way.
+    private var explicitRegisterInFlight = false
+    /// Auto refresh asked iOS for a push token and is waiting to decide.
+    private var autoRefreshPending = false
 
     private override init() {
         super.init()
@@ -62,6 +74,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         // Use saved appId from server if available, otherwise fallback to apiKey prefix
         self.appId = loadSavedAppId() ?? String(config.apiKey.prefix(16))
         self.userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
+        self.receiptStore = DeliveryReceiptStore(appGroup: config.appGroup)
         self.isInitialized = true
 
         // Mirror the device id into the shared App Group so a Notification
@@ -84,6 +97,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
         // Check for app update
         checkForAppUpdate()
+
+        // Keep the server's device record fresh without the app calling register().
+        startAutoRefreshIfNeeded()
     }
 
     /// Set log level for SDK logging
@@ -121,6 +137,10 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         }
         let effectiveUserId = self.userId
 
+        // Explicit register() always registers; cancel any pending auto refresh.
+        explicitRegisterInFlight = true
+        autoRefreshPending = false
+
         // Request notification permission
         NotificationManager.shared.requestPermission { [weak self] granted in
             guard let self = self else { return }
@@ -147,6 +167,18 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         socketManager?.disconnect()
         socketManager = nil
         voipManager = nil
+
+        // Detach the user server-side too: clearing only local state would
+        // leave this device receiving the logged-out user's pushes.
+        if userId != nil, let apiClient = apiClient, let deviceId = deviceId {
+            apiClient.clearUserId(deviceId: deviceId) { [weak self] result in
+                if case .success = result { self?.forgetUserInFingerprint() }
+                if case .failure(let error) = result {
+                    // The next registration retries the detach.
+                    Log.e(RiviumPush.TAG, "Failed to detach user on unregister", error: error)
+                }
+            }
+        }
 
         // Clear user ID
         userId = nil
@@ -235,6 +267,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         else { return }
 
         shared.set(deviceId, forKey: RiviumPushServiceExtension.sharedDeviceIdKey)
+        if let config = config {
+            shared.set(config.sdkHeaderValue, forKey: RiviumPushSDKInfo.sharedIdentityKey)
+        }
     }
 
     /// Get the per-install subscription ID issued by the server during register().
@@ -267,6 +302,13 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         self.apnsToken = token
         Log.d(RiviumPush.TAG, "APNs token received: \(token)")
         delegate?.riviumPush(self, didReceiveAPNsToken: token)
+
+        // Token requested by auto refresh (not by register()): register only
+        // if something changed.
+        if autoRefreshPending && !explicitRegisterInFlight {
+            completeAutoRefresh(apnsToken: token, voipToken: nil)
+            return
+        }
 
         // If we were waiting for the APNs token during registration, complete it now
         let userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).pendingUserId")
@@ -385,6 +427,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             switch result {
             case .success:
                 Log.d(RiviumPush.TAG, "User ID cleared")
+                self.forgetUserInFingerprint()
                 self.inAppMessageManager?.setUserId(nil)
                 self.inboxManager?.setUserId(nil)
             case .failure(let error):
@@ -667,6 +710,181 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         getABTestingManager().clearCache()
     }
 
+    // MARK: - Delivery Confirmation
+
+    /// Report delivery of a remote (APNs) notification the app received.
+    ///
+    /// The SDK does this automatically when it is the
+    /// `UNUserNotificationCenter` delegate and for messages received over its
+    /// own connection. Call it yourself from
+    /// `application(_:didReceiveRemoteNotification:fetchCompletionHandler:)`
+    /// or from your own `userNotificationCenter(_:willPresent:…)`.
+    ///
+    /// Without a Notification Service Extension, iOS only hands the app a
+    /// notification while it is running, so background deliveries go
+    /// unconfirmed; see `RiviumPushServiceExtension`. Each message is reported
+    /// once, even if both the extension and the app see it.
+    public func handleRemoteNotification(userInfo: [AnyHashable: Any]) {
+        reportDeliveryIfNeeded(messageId: RiviumPushServiceExtension.messageId(from: userInfo))
+    }
+
+    private func reportDeliveryIfNeeded(messageId: String?) {
+        guard
+            let messageId = messageId, !messageId.isEmpty,
+            let apiClient = apiClient,
+            let deviceId = deviceId,
+            let store = receiptStore
+        else { return }
+
+        guard store.claim(messageId) else {
+            Log.d(RiviumPush.TAG, "Delivery already reported: \(messageId)")
+            return
+        }
+
+        apiClient.reportDelivered(messageId: messageId, deviceId: deviceId) { success in
+            if success {
+                Log.d(RiviumPush.TAG, "Delivery reported: \(messageId)")
+            } else {
+                // Let a later sighting of the message try again.
+                store.release(messageId)
+                Log.w(RiviumPush.TAG, "Failed to report delivery: \(messageId)")
+            }
+        }
+    }
+
+    // MARK: - Automatic Registration Refresh
+
+    private static func isAuthorized(_ status: UNAuthorizationStatus) -> Bool {
+        switch status {
+        case .authorized, .provisional:
+            return true
+        default:
+            if #available(iOS 14.0, *), status == .ephemeral { return true }
+            return false
+        }
+    }
+
+    /// On launch, re-send the registration in the background if the install
+    /// registered before and the record may be stale. Never prompts for
+    /// permission and never blocks initialize().
+    private func startAutoRefreshIfNeeded() {
+        guard let config = config, config.autoRefresh else { return }
+        guard UserDefaults.standard.bool(forKey: prefsKey(RiviumPush.KEY_HAS_REGISTERED)) else {
+            Log.d(RiviumPush.TAG, "Auto refresh skipped - install has not registered yet")
+            return
+        }
+
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            guard let self = self else { return }
+            guard RiviumPush.isAuthorized(settings.authorizationStatus) else {
+                Log.d(RiviumPush.TAG, "Auto refresh skipped - notification permission not granted")
+                return
+            }
+
+            DispatchQueue.main.async {
+                guard !self.explicitRegisterInFlight, !self.autoRefreshPending else { return }
+                self.autoRefreshPending = true
+
+                let waitsForToken = config.usePushKit || config.useAPNs
+                if config.usePushKit {
+                    if self.voipManager == nil {
+                        self.voipManager = VoIPManager()
+                        self.voipManager?.delegate = self
+                    }
+                    self.voipManager?.register()
+                } else if config.useAPNs {
+                    // Apple recommends calling this on every launch; the token
+                    // arrives through setAPNsToken(_:).
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+
+                // No token (simulator, missing entitlement, the app does not
+                // forward it): decide with what we know.
+                let delay: TimeInterval = waitsForToken ? 10 : 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self = self, self.autoRefreshPending else { return }
+                    self.completeAutoRefresh(apnsToken: nil, voipToken: nil)
+                }
+            }
+        }
+    }
+
+    private func completeAutoRefresh(apnsToken: String?, voipToken: String?) {
+        autoRefreshPending = false
+
+        let current = currentFingerprint(apnsToken: apnsToken, voipToken: voipToken)
+        let reason = RegistrationRefresh.reason(
+            hasRegistered: UserDefaults.standard.bool(forKey: prefsKey(RiviumPush.KEY_HAS_REGISTERED)),
+            lastSuccess: loadLastRegisteredAt(),
+            now: Date(),
+            stored: loadFingerprint(),
+            current: current
+        )
+
+        guard let reason = reason else {
+            Log.d(RiviumPush.TAG, "Auto refresh skipped - registration is up to date")
+            return
+        }
+
+        Log.d(RiviumPush.TAG, "Auto refreshing registration (\(reason.rawValue))")
+        registerDevice(userId: userId, metadata: nil, pushToken: voipToken, apnsToken: apnsToken)
+    }
+
+    private func currentFingerprint(apnsToken: String?, voipToken: String?) -> RegistrationFingerprint {
+        let info = Bundle.main.infoDictionary
+        return RegistrationFingerprint(
+            appVersion: info?["CFBundleShortVersionString"] as? String,
+            appBuild: info?["CFBundleVersion"] as? String,
+            sdkIdentity: config?.sdkHeaderValue
+                ?? RiviumPushSDKInfo.headerValue(name: RiviumPushSDKInfo.name, version: RiviumPushSDKInfo.version),
+            apnsToken: apnsToken,
+            voipToken: voipToken,
+            userId: userId
+        )
+    }
+
+    /// Persist what was registered. Called only after the server accepted it.
+    private func recordSuccessfulRegistration(apnsToken: String?, voipToken: String?, keepPreviousUser: Bool = false) {
+        let previous = loadFingerprint()
+        var fingerprint = currentFingerprint(
+            apnsToken: apnsToken ?? previous?.apnsToken,
+            voipToken: (config?.usePushKit ?? false) ? (voipToken ?? previous?.voipToken) : nil
+        )
+        if fingerprint.apnsToken == nil { fingerprint.apnsToken = self.apnsToken }
+        if keepPreviousUser { fingerprint.userId = previous?.userId }
+
+        let defaults = UserDefaults.standard
+        defaults.set(true, forKey: prefsKey(RiviumPush.KEY_HAS_REGISTERED))
+        defaults.set(Date().timeIntervalSince1970, forKey: prefsKey(RiviumPush.KEY_LAST_REGISTERED_AT))
+        if let data = try? JSONEncoder().encode(fingerprint) {
+            defaults.set(data, forKey: prefsKey(RiviumPush.KEY_REGISTRATION_FINGERPRINT))
+        }
+    }
+
+    /// The server no longer has a user on this device; record that so the
+    /// next registration does not detach it again.
+    private func forgetUserInFingerprint() {
+        guard var fingerprint = loadFingerprint(), fingerprint.userId != nil else { return }
+        fingerprint.userId = nil
+        if let data = try? JSONEncoder().encode(fingerprint) {
+            UserDefaults.standard.set(data, forKey: prefsKey(RiviumPush.KEY_REGISTRATION_FINGERPRINT))
+        }
+    }
+
+    private func loadFingerprint() -> RegistrationFingerprint? {
+        guard let data = UserDefaults.standard.data(forKey: prefsKey(RiviumPush.KEY_REGISTRATION_FINGERPRINT)) else { return nil }
+        return try? JSONDecoder().decode(RegistrationFingerprint.self, from: data)
+    }
+
+    private func loadLastRegisteredAt() -> Date? {
+        let value = UserDefaults.standard.double(forKey: prefsKey(RiviumPush.KEY_LAST_REGISTERED_AT))
+        return value > 0 ? Date(timeIntervalSince1970: value) : nil
+    }
+
+    private func prefsKey(_ key: String) -> String {
+        return "\(RiviumPush.PREFS_NAME).\(key)"
+    }
+
     // MARK: - Notification Response Handling
 
     /// Process notification response when user taps on a notification
@@ -703,6 +921,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         }
 
         Log.d(RiviumPush.TAG, "Processing notification response: messageId=\(riviumPushMessage.messageId ?? "nil")")
+
+        // A tap proves delivery; covers apps without a Service Extension.
+        reportDeliveryIfNeeded(messageId: RiviumPushServiceExtension.messageId(from: userInfo) ?? riviumPushMessage.messageId)
 
         // Check for A/B test data and track click automatically
         if let data = riviumPushMessage.data,
@@ -799,6 +1020,12 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
     /// Show notifications when app is in foreground (APNs-delivered)
     public func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Confirm delivery of a push that arrived while the app is in the
+        // foreground (skipped if the Service Extension already reported it).
+        // Local notifications the SDK posts for socket messages carry the same
+        // id and are deduplicated.
+        handleRemoteNotification(userInfo: notification.request.content.userInfo)
+
         if config?.showNotificationInForeground == true {
             if #available(iOS 14.0, *) {
                 completionHandler([.banner, .sound, .badge])
@@ -875,6 +1102,41 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             return
         }
 
+        // The server treats a missing userId as "keep the existing one", so a
+        // registration can never detach a user. If a user was attached at the
+        // last successful registration and is gone now (clearUserId() whose
+        // request failed, or unregister()), detach it explicitly first so the
+        // device stops receiving that user's pushes.
+        // Checks self.userId too: some paths pass nil only because no pending
+        // userId was stored, while the SDK still has a signed-in user.
+        if userId == nil, self.userId == nil, loadFingerprint()?.userId != nil, let apiClient = apiClient {
+            apiClient.clearUserId(deviceId: deviceId) { [weak self] result in
+                guard let self = self else { return }
+                var keepUserInFingerprint = false
+                if case .failure(let error) = result {
+                    // Keep the old user in the fingerprint so the next launch retries.
+                    Log.e(RiviumPush.TAG, "Failed to detach user from device", error: error)
+                    keepUserInFingerprint = true
+                }
+                self.sendRegistration(deviceId: deviceId, userId: nil, metadata: metadata, pushToken: pushToken,
+                                      apnsToken: apnsToken, keepPreviousUser: keepUserInFingerprint)
+            }
+            return
+        }
+
+        sendRegistration(deviceId: deviceId, userId: userId, metadata: metadata, pushToken: pushToken,
+                         apnsToken: apnsToken, keepPreviousUser: false)
+    }
+
+    private func sendRegistration(
+        deviceId: String,
+        userId: String?,
+        metadata: [String: Any]?,
+        pushToken: String?,
+        apnsToken: String?,
+        keepPreviousUser: Bool
+    ) {
+
         // Pass bundle identifier as appIdentifier for per-app isolation
         let appIdentifier = Bundle.main.bundleIdentifier
 
@@ -909,8 +1171,11 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         ) { [weak self] result in
             guard let self = self else { return }
 
+            self.explicitRegisterInFlight = false
+
             switch result {
             case .success(let response):
+                self.recordSuccessfulRegistration(apnsToken: apnsToken, voipToken: pushToken, keepPreviousUser: keepPreviousUser)
                 Log.d(RiviumPush.TAG, "Registered with server: \(response.deviceId), appId: \(response.appId ?? "nil")")
 
                 // Update appId from server response if provided (projectId-based)
@@ -983,6 +1248,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func handlePushMessage(_ message: RiviumPushMessage) {
+        // Received over the socket or PushKit: the message is on the device.
+        reportDeliveryIfNeeded(messageId: message.messageId)
+
         // Check if silent
         if message.silent {
             Log.d(RiviumPush.TAG, "Silent message received")
@@ -1105,6 +1373,11 @@ extension RiviumPush: VoIPManager.VoIPManagerDelegate {
     func voipManager(_ manager: VoIPManager, didReceiveToken token: String) {
         self.voipToken = token
         delegate?.riviumPush(self, didReceiveVoIPToken: token)
+
+        if autoRefreshPending && !explicitRegisterInFlight {
+            completeAutoRefresh(apnsToken: nil, voipToken: token)
+            return
+        }
 
         // Complete registration with token
         let userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).pendingUserId")

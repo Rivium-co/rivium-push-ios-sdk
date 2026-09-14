@@ -89,6 +89,8 @@ internal class ApiClient {
         var body: [String: Any] = [
             "deviceId": deviceId,
             "platform": "ios",
+            "sdkName": config.reportedSdkName,
+            "sdkVersion": config.reportedSdkVersion,
         ]
         if let pushToken = pushToken { body["pushToken"] = pushToken }
         if let apnsToken = apnsToken { body["apnsToken"] = apnsToken }
@@ -198,6 +200,7 @@ internal class ApiClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         executeRequest(request, completion: completion)
     }
@@ -405,6 +408,27 @@ internal class ApiClient {
         }
     }
 
+    // MARK: - Delivery Receipts
+
+    /// Report that a message reached this device (POST /receipts/delivered).
+    /// Idempotent server-side; retries transient failures a few times.
+    func reportDelivered(
+        messageId: String,
+        deviceId: String,
+        completion: @escaping (Bool) -> Void
+    ) {
+        DeliveryReceiptSender.send(
+            messageId: messageId,
+            deviceId: deviceId,
+            apiKey: config.apiKey,
+            serverUrl: config.serverUrl,
+            sdkHeader: config.sdkHeaderValue,
+            maxAttempts: 3,
+            timeout: NetworkConfig.requestTimeout,
+            completion: completion
+        )
+    }
+
     // MARK: - Private HTTP Methods
 
     private func post<T: Encodable, R: Decodable>(
@@ -416,6 +440,7 @@ internal class ApiClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         do {
             request.httpBody = try JSONEncoder().encode(body)
@@ -441,6 +466,7 @@ internal class ApiClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: params)
@@ -463,6 +489,7 @@ internal class ApiClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: params)
@@ -485,6 +512,7 @@ internal class ApiClient {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         do {
             request.httpBody = try JSONEncoder().encode(body)
@@ -507,6 +535,7 @@ internal class ApiClient {
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: params)
@@ -527,6 +556,7 @@ internal class ApiClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         executeRawRequest(request, completion: completion)
     }
@@ -538,6 +568,7 @@ internal class ApiClient {
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
         executeRequest(request, completion: completion)
     }

@@ -89,11 +89,21 @@ public enum RiviumPushServiceExtension {
             return
         }
 
+        // Skip if this message was already reported (dedupe set shared with
+        // the app through the App Group).
+        let store = DeliveryReceiptStore(defaults: defaults)
+        guard store.claim(messageId) else { return }
+
+        let identity = defaults.string(forKey: RiviumPushSDKInfo.sharedIdentityKey)
+            ?? RiviumPushSDKInfo.headerValue(name: RiviumPushSDKInfo.name, version: RiviumPushSDKInfo.version)
+
         reportDelivered(
             messageId: messageId,
             deviceId: deviceId,
             apiKey: apiKey,
-            serverUrl: serverUrl
+            serverUrl: serverUrl,
+            sdkHeader: identity,
+            store: store
         )
     }
 
@@ -118,27 +128,27 @@ public enum RiviumPushServiceExtension {
         messageId: String,
         deviceId: String,
         apiKey: String,
-        serverUrl: String
+        serverUrl: String,
+        sdkHeader: String,
+        store: DeliveryReceiptStore
     ) {
-        guard let url = URL(string: "\(serverUrl)/receipts/delivered") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-        // Extensions are killed quickly; do not hold the system waiting.
-        request.timeoutInterval = 5
-
-        let body: [String: Any] = ["messageId": messageId, "deviceId": deviceId]
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
-        request.httpBody = data
-
         // Keep the extension alive just long enough for the request to leave,
-        // without blocking the notification being shown.
+        // without blocking the notification being shown. A single attempt:
+        // extensions are killed quickly, and if it fails the claim is released
+        // so the app can report the delivery when it next sees the message.
         let semaphore = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { _, _, _ in
+        DeliveryReceiptSender.send(
+            messageId: messageId,
+            deviceId: deviceId,
+            apiKey: apiKey,
+            serverUrl: serverUrl,
+            sdkHeader: sdkHeader,
+            maxAttempts: 1,
+            timeout: 5
+        ) { success in
+            if !success { store.release(messageId) }
             semaphore.signal()
-        }.resume()
+        }
         _ = semaphore.wait(timeout: .now() + 5)
     }
 }

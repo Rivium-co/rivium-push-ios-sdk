@@ -193,6 +193,42 @@ let config = RiviumPushConfig.builder(apiKey: "your_key")
 | `showNotificationInForeground` | `false` | Show notifications when app is active |
 | `autoConnect` | `true` | Auto-connect when app enters foreground |
 | `autoReconnect` | `true` | Auto-reconnect with exponential backoff |
+| `autoRefresh` | `true` | Refresh the registration on launch when it may be stale (see below) |
+| `appGroup` | `nil` | App Group shared with a Notification Service Extension, for delivery confirmation |
+
+### Automatic registration refresh
+
+Once this install has registered, `initialize(config:)` keeps the server's device record fresh on its own. It re-sends the registration in the background when 24 hours have passed since the last successful one, or when the app version or build, the SDK version, the push token or the user id has changed; otherwise it does nothing. It never prompts for notification permission, and only runs when permission was already granted. An explicit `register()` always registers. Turn it off with `autoRefresh: false`.
+
+## Delivery Confirmation
+
+APNs only confirms that Apple *accepted* a notification, not that it reached the device. The SDK reports a real delivery (`POST /receipts/delivered`) whenever it sees a message:
+
+| How the message arrived | Reported by | Needs |
+|--------|---------|-------------|
+| SDK socket (app in foreground) | the SDK | nothing |
+| APNs, app in foreground | the SDK, from `willPresent` | the SDK as `UNUserNotificationCenter` delegate, or a call to `handleRemoteNotification(userInfo:)` from your own |
+| APNs, user taps it | the SDK, from `handleNotificationResponse` | nothing |
+| APNs, app in background or not running | your Notification Service Extension | `RiviumPushSDKExtension` + an App Group |
+
+iOS does not run your app when a notification arrives in the background, so **background APNs deliveries are confirmed only with a Notification Service Extension**. Add the extension target, `pod 'RiviumPushSDKExtension'` to it, enable the same App Group on both targets, pass it as `appGroup` in the config, and call `RiviumPushServiceExtension.didReceive(_:apiKey:appGroup:)` from the extension (see the doc comment on `RiviumPushServiceExtension`).
+
+Each message is reported once: the app and the extension share a small list of reported message ids through the App Group, so a notification the extension already confirmed is not reported again when the app shows or opens it.
+
+If you handle silent pushes, forward them too:
+
+```swift
+func application(_ application: UIApplication,
+                 didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                 fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+    RiviumPush.shared.handleRemoteNotification(userInfo: userInfo)
+    completionHandler(.noData)
+}
+```
+
+### Wrapper SDKs
+
+`wrapperSdkName` / `wrapperSdkVersion` exist for Rivium's official Flutter and React Native wrappers, which report their own identity instead of the native one. Apps should not set them. `RiviumPush.sdkVersion` returns the native SDK version.
 
 ## Requirements
 

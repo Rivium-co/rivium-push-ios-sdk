@@ -62,6 +62,25 @@ public struct RiviumPushConfig {
     /// Leave nil if you are not confirming delivery from an extension.
     public let appGroup: String?
 
+    /// Refresh the device registration automatically on launch (default: true).
+    ///
+    /// When this install has registered before, `initialize(config:)` re-sends
+    /// the registration in the background if 24 hours have passed since the
+    /// last successful one, or if the app version/build, SDK version, push
+    /// token or user id changed. It never prompts for notification permission:
+    /// it only runs when permission was already granted. An explicit
+    /// `register()` always registers regardless of this setting.
+    public let autoRefresh: Bool
+
+    /// Name of the official wrapper SDK embedding this one (e.g. "flutter",
+    /// "react-native"). Intended for Rivium's official Flutter and React Native
+    /// wrappers only; apps should leave this nil. When both `wrapperSdkName`
+    /// and `wrapperSdkVersion` are set they replace the reported SDK identity.
+    public let wrapperSdkName: String?
+
+    /// Version of the official wrapper SDK. See `wrapperSdkName`.
+    public let wrapperSdkVersion: String?
+
     public init(
         apiKey: String,
         pnHost: String = "",
@@ -76,10 +95,16 @@ public struct RiviumPushConfig {
         maxReconnectAttempts: Int = 0,
         initialReconnectDelayMs: Int = 1000,
         maxReconnectDelayMs: Int = 60000,
-        appGroup: String? = nil
+        appGroup: String? = nil,
+        autoRefresh: Bool = true,
+        wrapperSdkName: String? = nil,
+        wrapperSdkVersion: String? = nil
     ) {
         self.apiKey = apiKey
         self.appGroup = appGroup
+        self.autoRefresh = autoRefresh
+        self.wrapperSdkName = wrapperSdkName
+        self.wrapperSdkVersion = wrapperSdkVersion
         // Dev server override via Info.plist key "RiviumPushServerURL" (not committed to git)
         if let devUrl = Bundle.main.object(forInfoDictionaryKey: "RiviumPushServerURL") as? String, !devUrl.isEmpty {
             self.serverUrl = devUrl
@@ -98,6 +123,21 @@ public struct RiviumPushConfig {
         self.maxReconnectAttempts = maxReconnectAttempts
         self.initialReconnectDelayMs = initialReconnectDelayMs
         self.maxReconnectDelayMs = maxReconnectDelayMs
+    }
+
+    /// SDK name reported to the backend: the wrapper's if set, else "ios".
+    internal var reportedSdkName: String {
+        return RiviumPushSDKInfo.identity(wrapperName: wrapperSdkName, wrapperVersion: wrapperSdkVersion).name
+    }
+
+    /// SDK version reported to the backend: the wrapper's if set, else `RiviumPush.sdkVersion`.
+    internal var reportedSdkVersion: String {
+        return RiviumPushSDKInfo.identity(wrapperName: wrapperSdkName, wrapperVersion: wrapperSdkVersion).version
+    }
+
+    /// Value of the `X-Rivium-SDK` header, `name/version`.
+    internal var sdkHeaderValue: String {
+        return RiviumPushSDKInfo.headerValue(name: reportedSdkName, version: reportedSdkVersion)
     }
 
     /// Check if PN Protocol config has been fetched from server
@@ -136,9 +176,29 @@ public struct RiviumPushConfig {
         private var initialReconnectDelayMs: Int = 1000
         private var maxReconnectDelayMs: Int = 60000
         private var appGroup: String? = nil
+        private var autoRefresh: Bool = true
+        private var wrapperSdkName: String? = nil
+        private var wrapperSdkVersion: String? = nil
 
         public init(apiKey: String) {
             self.apiKey = apiKey
+        }
+
+        /// Refresh the registration automatically on launch (default: true).
+        /// See `RiviumPushConfig.autoRefresh`.
+        @discardableResult
+        public func autoRefresh(_ enabled: Bool) -> Builder {
+            self.autoRefresh = enabled
+            return self
+        }
+
+        /// For Rivium's official Flutter / React Native wrappers only: report
+        /// the wrapper's SDK identity instead of the native iOS one.
+        @discardableResult
+        public func wrapperSdk(name: String, version: String) -> Builder {
+            self.wrapperSdkName = name
+            self.wrapperSdkVersion = version
+            return self
         }
 
         /// App Group shared with a Notification Service Extension, enabling
@@ -232,7 +292,10 @@ public struct RiviumPushConfig {
                 maxReconnectAttempts: maxReconnectAttempts,
                 initialReconnectDelayMs: initialReconnectDelayMs,
                 maxReconnectDelayMs: maxReconnectDelayMs,
-                appGroup: appGroup
+                appGroup: appGroup,
+                autoRefresh: autoRefresh,
+                wrapperSdkName: wrapperSdkName,
+                wrapperSdkVersion: wrapperSdkVersion
             )
         }
     }

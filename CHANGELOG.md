@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.12] - 2026-09-14
+
+### Added
+- SDK identity: the SDK reports its name and version (`RiviumPush.sdkVersion`).
+- `autoRefresh` (default on): keeps a registered device up to date on launch. Never asks for permission.
+- Delivery confirmation from the app: foreground notifications, socket messages and taps. `handleRemoteNotification(userInfo:)` for apps with their own notification delegate.
+
+### Fixed
+- `unregister()` now detaches the user on the server, so a logged-out user stops receiving pushes.
+
+### Changed
+- Delivery confirmations are sent once per message, shared with the Notification Service Extension through the App Group.
+
 ## [0.1.11] - 2026-09-09
 
 ### Fixed

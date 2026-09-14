@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDKExtension'
-  s.version          = '0.1.11'
+  s.version          = '0.1.12'
   s.summary          = 'Delivery confirmation for Rivium Push, for a Notification Service Extension.'
 
   s.description      = <<-DESC
@@ -22,7 +22,7 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '13.0'
   s.swift_version = '5.0'
 
-  s.source_files = 'Sources/RiviumPushServiceExtension.swift'
+  s.source_files = ['Sources/RiviumPushServiceExtension.swift', 'Sources/RiviumPushShared.swift']
   s.frameworks   = 'UserNotifications'
 
   s.pod_target_xcconfig = {
