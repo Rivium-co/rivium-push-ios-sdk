@@ -79,6 +79,7 @@ internal class ApiClient {
         language: String? = nil,
         country: String? = nil,
         timezone: String? = nil,
+        installId: String? = nil,
         completion: @escaping (Result<RegisterResponse, Error>) -> Void
     ) {
         guard let url = URL(string: "\(config.serverUrl)/devices/register") else {
@@ -106,6 +107,10 @@ internal class ApiClient {
         if let language = language { body["language"] = language }
         if let country = country { body["country"] = country }
         if let timezone = timezone { body["timezone"] = timezone }
+        // Stable per-install fingerprint (hashed) so the server can retire the
+        // device row a reinstall left behind. Omitted when it can't be computed
+        // — never sent empty. Ignored by servers older than this SDK.
+        if let installId = installId, !installId.isEmpty { body["installId"] = installId }
 
         postDict(url: url, params: body, completion: completion)
     }

@@ -44,7 +44,8 @@ let package = Package(
                 "Inbox/InboxManager.swift",
                 "ABTesting/ABTest.swift",
                 "ABTesting/ABTestingManager.swift",
-                "Internal/SdkCredentials.swift"
+                "Internal/SdkCredentials.swift",
+                "Internal/InstallId.swift"
             ]
         ),
         .testTarget(

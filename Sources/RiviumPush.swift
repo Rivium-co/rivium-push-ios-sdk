@@ -1167,7 +1167,8 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             deviceModel: attributes.deviceModel,
             language: attributes.language,
             country: attributes.country,
-            timezone: attributes.timezone
+            timezone: attributes.timezone,
+            installId: InstallId.current
         ) { [weak self] result in
             guard let self = self else { return }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.13] - 2026-09-18
+
+### Added
+- `installId` on register, so a reinstall no longer leaves a stale device behind.
+
 ## [0.1.12] - 2026-09-14
 
 ### Added
