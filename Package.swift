@@ -14,7 +14,7 @@ let package = Package(
     ],
     dependencies: [
         // PN Protocol - Rivium Push's messaging protocol layer
-        .package(url: "https://github.com/Rivium-co/pn-protocol-ios.git", from: "0.2.1"),
+        .package(url: "https://github.com/Rivium-co/pn-protocol-ios.git", from: "0.2.2"),
     ],
     targets: [
         .target(
@@ -45,7 +45,9 @@ let package = Package(
                 "ABTesting/ABTest.swift",
                 "ABTesting/ABTestingManager.swift",
                 "Internal/SdkCredentials.swift",
-                "Internal/InstallId.swift"
+                "Internal/InstallId.swift",
+                "Internal/MqttEndpoints.swift",
+                "Internal/ConnectivityMonitor.swift"
             ]
         ),
         .testTarget(

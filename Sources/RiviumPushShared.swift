@@ -14,7 +14,7 @@ internal enum RiviumPushSDKInfo {
 
     /// Single source of truth for the SDK version. Must match both podspecs;
     /// `SdkIdentityTests` fails when they drift.
-    static let version = "0.1.13"
+    static let version = "0.1.14"
 
     /// Header carrying the SDK identity on every request.
     static let headerName = "X-Rivium-SDK"

@@ -1,4 +1,5 @@
 import Foundation
+import PNProtocol
 
 /// Configuration for Rivium Push SDK
 ///
@@ -23,6 +24,10 @@ public struct RiviumPushConfig {
 
     /// JWT token for PN Protocol authentication (per-device, fetched at registration)
     public internal(set) var pnToken: String?
+
+    /// Extra gateway endpoints from the server (`mqttEndpoints`), tried in
+    /// order with failover. `pnHost`:`pnPort` is always tried last.
+    internal var pnEndpoints: [PNEndpoint] = []
 
     /// Enable PushKit VoIP for background delivery (default: false).
     /// Only enable for apps whose primary purpose is voice/video calling (e.g. telehealth, messaging).
@@ -146,11 +151,17 @@ public struct RiviumPushConfig {
     }
 
     /// Update PN Protocol config from server registration response
-    internal mutating func updatePNConfig(host: String, port: UInt16, secure: Bool = true, token: String?) {
+    internal mutating func updatePNConfig(host: String, port: UInt16, secure: Bool = true, token: String?, endpoints: [PNEndpoint] = []) {
         self.pnHost = host
         self.pnPort = port
         self.pnSecure = secure
         self.pnToken = token
+        self.pnEndpoints = endpoints
+    }
+
+    /// Default gateway endpoint, always tried last.
+    internal var defaultPNEndpoint: PNEndpoint {
+        return PNEndpoint(host: pnHost, port: pnPort, secure: pnSecure)
     }
 
     /// Update just the PN Protocol token (for token refresh)

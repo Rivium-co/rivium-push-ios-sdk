@@ -26,13 +26,66 @@ internal class PNSocketManager: NSObject {
         func pnSocketManager(_ manager: PNSocketManager, didReceiveMessage message: String, channel: String)
     }
 
-    init(config: RiviumPushConfig, appId: String, deviceId: String, appIdentifier: String = "_default", subscriptionId: String? = nil) {
+    /// Timings for the socket. Keepalive is short so a dead connection on a
+    /// lossy network is noticed quickly; the server resends anything missed.
+    static let keepAliveSeconds: UInt16 = 30
+    static let connectTimeoutSeconds: TimeInterval = 15
+    static let pingTimeoutSeconds: TimeInterval = 15
+
+    private let endpointMemory: MqttEndpointMemory
+    private let networkKind: () -> NetworkKind
+
+    init(
+        config: RiviumPushConfig,
+        appId: String,
+        deviceId: String,
+        appIdentifier: String = "_default",
+        subscriptionId: String? = nil,
+        endpointMemory: MqttEndpointMemory = MqttEndpointMemory(),
+        networkKind: @escaping () -> NetworkKind = { .other }
+    ) {
         self.riviumPushConfig = config
         self.appId = appId
         self.deviceId = deviceId
         self.appIdentifier = appIdentifier
         self.subscriptionId = subscriptionId
+        self.endpointMemory = endpointMemory
+        self.networkKind = networkKind
         super.init()
+    }
+
+    /// Endpoints to try for the current network type, best first.
+    func orderedEndpoints() -> [PNEndpoint] {
+        return MqttEndpointOrder.ordered(
+            server: riviumPushConfig.pnEndpoints,
+            fallback: riviumPushConfig.defaultPNEndpoint,
+            lastGood: endpointMemory.lastGood(for: networkKind())
+        )
+    }
+
+    /// Build the socket configuration.
+    func makePNConfig(clientId: String) -> PNConfig {
+        let c = riviumPushConfig
+        var builder = PNConfigBuilder()
+            .gateway(c.pnHost)
+            .port(c.pnPort)
+            .secure(c.pnSecure)
+            .endpoints(orderedEndpoints())
+            .clientId(clientId)
+            .heartbeatInterval(PNSocketManager.keepAliveSeconds)
+            .connectionTimeout(PNSocketManager.connectTimeoutSeconds)
+            .pingTimeout(PNSocketManager.pingTimeoutSeconds)
+            .freshStart(true)
+            .autoReconnect(c.autoReconnect)
+            .maxReconnectAttempts(max(0, c.maxReconnectAttempts))  // 0 = never give up
+            .reconnectDelay(Double(max(c.initialReconnectDelayMs, 100)) / 1000.0)
+            .maxReconnectDelay(Double(max(c.maxReconnectDelayMs, c.initialReconnectDelayMs, 100)) / 1000.0)
+
+        // JWT token auth (per-device authentication)
+        if let token = c.pnToken {
+            builder = builder.auth(.basic(username: "jwt", password: token))
+        }
+        return builder.build()
     }
 
     /// Connect to gateway
@@ -40,37 +93,16 @@ internal class PNSocketManager: NSObject {
         let bundleHash = String(abs(Bundle.main.bundleIdentifier?.hashValue ?? 0), radix: 16)
         let clientId = "rp_\(appId)_\(deviceId)_\(bundleHash)"
 
-        print("[PNSocketManager] connect() called - host: \(riviumPushConfig.pnHost), port: \(riviumPushConfig.pnPort)")
-        print("[PNSocketManager] Token present: \(riviumPushConfig.pnToken != nil)")
-
-        // Build PNConfig from RiviumPushConfig
-        var configBuilder = PNConfigBuilder()
-            .gateway(riviumPushConfig.pnHost)
-            .port(riviumPushConfig.pnPort)
-            .clientId(clientId)
-            .heartbeatInterval(60)
-            .connectionTimeout(30)
-            .freshStart(true)
-            .autoReconnect(true)
-            .maxReconnectAttempts(10)
-            .reconnectDelay(1.0)
-            .maxReconnectDelay(300.0)
-            .secure(riviumPushConfig.pnSecure)  // Use TLS/SSL from server config
-
-        // Set JWT token auth if available (per-device authentication)
-        if let token = riviumPushConfig.pnToken {
-            print("[PNSocketManager] Using JWT token for PN Protocol authentication (length: \(token.count))")
-            configBuilder = configBuilder.auth(.basic(username: "jwt", password: token))
-        } else {
+        if riviumPushConfig.pnToken == nil {
             print("[PNSocketManager] WARNING: No PN token available - connection will likely fail with 'notAuthorized'")
         }
 
-        let pnConfig = configBuilder.build()
+        let pnConfig = makePNConfig(clientId: clientId)
+        print("[PNSocketManager] connect() - endpoints: \(pnConfig.endpoints)")
 
-        // Initialize RiviumPush protocol
+        // Initialize RiviumPush protocol (closes any previous socket first)
         PNProtocolClient.initialize(pnConfig)
         socket = PNProtocolClient.socket()
-        print("[PNSocketManager] Socket created: \(socket != nil)")
 
         // Add connection listener (must keep strong reference to prevent deallocation)
         connectionListener = ConnectionListener(manager: self)
@@ -81,8 +113,6 @@ internal class PNSocketManager: NSObject {
             print("[PNSocketManager] Error: \(error.message)")
         })
 
-        // Open connection
-        print("[PNSocketManager] Opening connection to \(riviumPushConfig.pnHost):\(riviumPushConfig.pnPort)")
         socket?.open()
     }
 
@@ -97,11 +127,29 @@ internal class PNSocketManager: NSObject {
         print("[PNSocketManager] Disconnected")
     }
 
-    /// Trigger immediate reconnection without destroying the socket.
-    /// Preserves activeChannels so PNSocket can resubscribe automatically.
-    func reconnectNow() {
-        print("[PNSocketManager] reconnectNow() called")
-        socket?.reconnectImmediately()
+    /// Reconnect now with the backoff reset.
+    ///
+    /// - Parameter force: also drop a live connection (network path changed).
+    ///   Without it a connected socket is only probed with a ping.
+    /// After `disconnect()` this opens a new socket.
+    func reconnectNow(force: Bool = false) {
+        print("[PNSocketManager] reconnectNow(force: \(force))")
+        guard let socket = socket else {
+            connect()
+            return
+        }
+        socket.setEndpoints(orderedEndpoints())
+        if !force && socket.state == .connected {
+            socket.probe()
+            return
+        }
+        socket.reconnect(force: force)
+    }
+
+    /// Remember the endpoint that just worked for this network type.
+    private func rememberConnectedEndpoint() {
+        guard let endpoint = socket?.connectedEndpoint else { return }
+        endpointMemory.remember(endpoint, for: networkKind())
     }
 
     /// Subscribe to device channels (called only on first connect, not reconnects).
@@ -162,6 +210,7 @@ internal class PNSocketManager: NSObject {
             && riviumPushConfig.pnPort == config.pnPort
             && riviumPushConfig.pnToken == config.pnToken
             && riviumPushConfig.pnSecure == config.pnSecure
+            && riviumPushConfig.pnEndpoints == config.pnEndpoints
     }
 
     // MARK: - Connection Listener
@@ -179,6 +228,7 @@ internal class PNSocketManager: NSObject {
 
         func onConnected() {
             print("[PNSocketManager] Connected")
+            manager?.rememberConnectedEndpoint()
             // Subscribe only on the first connection.
             // On reconnects, PNSocket.resubscribeChannels() handles
             // re-subscribing from its activeChannels set automatically.
@@ -188,12 +238,16 @@ internal class PNSocketManager: NSObject {
             } else {
                 print("[PNSocketManager] Reconnected - PNSocket handles resubscription automatically")
             }
-            manager?.delegate?.pnSocketManager(manager!, didConnect: true)
+            if let manager = manager {
+                manager.delegate?.pnSocketManager(manager, didConnect: true)
+            }
         }
 
         func onDisconnected(reason: String?) {
             print("[PNSocketManager] Disconnected: \(reason ?? "unknown")")
-            manager?.delegate?.pnSocketManager(manager!, didDisconnect: nil)
+            if let manager = manager {
+                manager.delegate?.pnSocketManager(manager, didDisconnect: nil)
+            }
         }
 
         func onReconnecting(attempt: Int, nextRetryMs: Int) {

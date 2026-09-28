@@ -56,6 +56,17 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// Auto refresh asked iOS for a push token and is waiting to decide.
     private var autoRefreshPending = false
 
+    /// The socket should be up: connect() ran and disconnect() has not.
+    /// Network and foreground triggers only act while this is true.
+    private var wantsConnection = false
+    private let connectivity = ConnectivityMonitor()
+    private let endpointMemory = MqttEndpointMemory()
+    private var fastReconnectWork: DispatchWorkItem?
+    private var fastReconnectForce = false
+    /// Triggers that arrive together (path updates, foreground + active)
+    /// collapse into one reconnect.
+    private static let fastReconnectDebounce: TimeInterval = 1.0
+
     private override init() {
         super.init()
         setupAppLifecycleObservers()
@@ -76,6 +87,14 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         self.userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
         self.receiptStore = DeliveryReceiptStore(appGroup: config.appGroup)
         self.isInitialized = true
+
+        // Reconnect at once when the network comes back or changes.
+        connectivity.onChange = { [weak self] kind, interfaceChanged in
+            Log.d(RiviumPush.TAG, "Network path changed (\(kind.rawValue), interfaceChanged: \(interfaceChanged))")
+            // The old socket went through an outage or sits on a dead interface.
+            self?.scheduleFastReconnect(force: true)
+        }
+        connectivity.start()
 
         // Mirror the device id into the shared App Group so a Notification
         // Service Extension can confirm delivery. The extension runs in its
@@ -164,6 +183,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
     /// Unregister from push notifications
     public func unregister() {
+        stopWantingConnection()
         socketManager?.disconnect()
         socketManager = nil
         voipManager = nil
@@ -207,6 +227,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         }
 
         Log.d(RiviumPush.TAG, "Connecting to pn-protocol (appId: \(appId))")
+        wantsConnection = true
 
         if let existing = socketManager {
             if existing.isConnected {
@@ -232,7 +253,15 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         // First time or config changed — create new socket manager
         let appIdentifier = Bundle.main.bundleIdentifier ?? "_default"
         Log.d(RiviumPush.TAG, "Creating new PNSocketManager with appIdentifier: \(appIdentifier), subscriptionId: \(subscriptionId ?? "nil")")
-        socketManager = PNSocketManager(config: config, appId: appId, deviceId: deviceId, appIdentifier: appIdentifier, subscriptionId: subscriptionId)
+        socketManager = PNSocketManager(
+            config: config,
+            appId: appId,
+            deviceId: deviceId,
+            appIdentifier: appIdentifier,
+            subscriptionId: subscriptionId,
+            endpointMemory: endpointMemory,
+            networkKind: { [weak self] in self?.connectivity.currentKind ?? .other }
+        )
         socketManager?.delegate = self
 
         Log.d(RiviumPush.TAG, "Calling socketManager.connect()")
@@ -241,7 +270,33 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
     /// Stop PN Protocol connection (call when app enters background)
     public func disconnect() {
+        stopWantingConnection()
         socketManager?.disconnect()
+    }
+
+    private func stopWantingConnection() {
+        wantsConnection = false
+        fastReconnectWork?.cancel()
+        fastReconnectWork = nil
+        fastReconnectForce = false
+    }
+
+    /// Reconnect soon (debounced) with the backoff reset. `force` also drops a
+    /// connection that looks alive. Does nothing unless the socket is wanted.
+    private func scheduleFastReconnect(force: Bool) {
+        guard wantsConnection, socketManager != nil else { return }
+        fastReconnectForce = fastReconnectForce || force
+        fastReconnectWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            let force = self.fastReconnectForce
+            self.fastReconnectForce = false
+            self.fastReconnectWork = nil
+            guard self.wantsConnection, let manager = self.socketManager else { return }
+            manager.reconnectNow(force: force)
+        }
+        fastReconnectWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + RiviumPush.fastReconnectDebounce, execute: work)
     }
 
     /// Check if PN Protocol is connected
@@ -996,6 +1051,18 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             name: UIApplication.willEnterForegroundNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
+    @objc private func appDidBecomeActive() {
+        // Back from Control Center, a call, an alert or the background: make
+        // sure the socket is up (or probe it) without waiting for the backoff.
+        scheduleFastReconnect(force: false)
     }
 
     @objc private func appDidEnterBackground() {
@@ -1207,7 +1274,8 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
                             host: mqtt.host,
                             port: UInt16(mqtt.port),
                             secure: secure,
-                            token: mqtt.token
+                            token: mqtt.token,
+                            endpoints: response.mqttEndpoints?.endpoints ?? []
                         )
                         self.config = updatedConfig
                         Log.d(RiviumPush.TAG, "PN config updated - secure=\(secure), pnToken is now: \(updatedConfig.pnToken != nil ? "present" : "nil")")

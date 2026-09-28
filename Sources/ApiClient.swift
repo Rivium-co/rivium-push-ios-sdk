@@ -38,6 +38,9 @@ internal class ApiClient {
         let appId: String? // App ID from server (first 16 chars of projectId)
         let message: String
         let mqtt: PNGatewayConfig?  // PN Protocol gateway config (named 'mqtt' for backward compatibility)
+        /// Optional extra gateway endpoints, tried before the default one.
+        /// Malformed entries are dropped; never fails the response.
+        let mqttEndpoints: MqttEndpointList?
     }
 
     /// Response from PN Protocol token refresh

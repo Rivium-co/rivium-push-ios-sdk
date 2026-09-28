@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.14] - 2026-09-29
+
+### Changed
+- Faster, steadier realtime connection on poor networks: reconnects right away when the network returns or changes and when the app comes to the foreground; retries back off to at most 60 seconds and never stop; dead connections are detected sooner.
+- Supports extra gateway addresses from the server, with automatic failover.
+
+### Fixed
+- The realtime connection did not come back after the app returned from the background.
+
 ## [0.1.13] - 2026-09-18
 
 ### Added
