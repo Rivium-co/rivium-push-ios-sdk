@@ -70,17 +70,22 @@ internal struct UserTokenClaims {
 /// - Never blocks a thread: the provider runs off the main thread and may hop
 ///   to the main queue freely. A provider that does not answer in time counts
 ///   as failed.
-/// - Keeps the last token on disk so work that runs while no provider can
-///   answer still sends it while it is unexpired.
+/// - Keeps the last token in the Keychain so work that runs while no provider
+///   can answer still sends it while it is unexpired. If the Keychain cannot
+///   be used, the token simply lives for this process only.
 internal final class UserTokenManager {
     /// Refresh this long before `exp`, to absorb clock skew and request time.
     static let refreshMargin: TimeInterval = 60
     /// How long the provider may take before the request goes out without a token.
     static let providerTimeout: TimeInterval = 10
-    static let storageKey = "co.rivium.push.userToken"
+    /// Where 0.1.15 kept the token. Only read to move it out, never written.
+    static let legacyDefaultsKey = "co.rivium.push.userToken"
+    /// Set once per install; tells a fresh install from a later launch.
+    static let installMarkerKey = "co.rivium.push.userTokenInstall"
 
     private let lock = NSLock()
-    private let defaults: UserDefaults?
+    private let store: UserTokenStore?
+    private let legacyDefaults: UserDefaults?
     private let timeout: TimeInterval
     private let now: () -> Date
 
@@ -100,24 +105,49 @@ internal final class UserTokenManager {
 
     init(
         provider: RiviumPushTokenProvider? = nil,
-        defaults: UserDefaults? = nil,
+        store: UserTokenStore? = nil,
+        legacyDefaults: UserDefaults? = nil,
         timeout: TimeInterval = UserTokenManager.providerTimeout,
         now: @escaping () -> Date = Date.init
     ) {
-        self.defaults = defaults
+        self.store = store
+        self.legacyDefaults = legacyDefaults
         self.timeout = timeout
         self.now = now
         self.provider = provider.map(UserTokenManager.adapt)
 
+        restore()
+    }
+
+    /// Loads the token saved by an earlier launch. One left in UserDefaults by
+    /// 0.1.15 is moved to the store; it stays where it is only if that fails,
+    /// so a later launch can try again.
+    private func restore() {
+        let key = UserTokenManager.legacyDefaultsKey
+
+        // The Keychain outlives the app, UserDefaults does not. A first launch
+        // with no marker and no token of its own in UserDefaults is a fresh
+        // install: a token left by a previous install is not this install's.
+        if let defaults = legacyDefaults, !defaults.bool(forKey: UserTokenManager.installMarkerKey) {
+            if defaults.string(forKey: key) == nil { store?.remove() }
+            defaults.set(true, forKey: UserTokenManager.installMarkerKey)
+        }
+        let saved = store?.read().flatMap { $0.isEmpty ? nil : $0 }
+        let legacy = legacyDefaults?.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 }
+        guard let stored = saved ?? legacy else { return }
+
         // An expired stored token is never sent.
-        if let stored = defaults?.string(forKey: UserTokenManager.storageKey), !stored.isEmpty {
-            let storedClaims = UserTokenClaims.read(stored)
-            if let exp = storedClaims.expiresAt, now() >= exp {
-                defaults?.removeObject(forKey: UserTokenManager.storageKey)
-            } else {
-                token = stored
-                claims = storedClaims
-            }
+        let storedClaims = UserTokenClaims.read(stored)
+        if let exp = storedClaims.expiresAt, now() >= exp {
+            if saved != nil { store?.remove() }
+            legacyDefaults?.removeObject(forKey: key)
+            return
+        }
+
+        token = stored
+        claims = storedClaims
+        if saved != nil || store?.write(stored) == true {
+            legacyDefaults?.removeObject(forKey: key)
         }
     }
 
@@ -294,12 +324,15 @@ internal final class UserTokenManager {
     private func storeLocked(_ newToken: String) {
         token = newToken
         claims = UserTokenClaims.read(newToken)
-        defaults?.set(newToken, forKey: UserTokenManager.storageKey)
+        // A token that could not be saved must not leave an older one behind.
+        if let store = store, !store.write(newToken) { store.remove() }
+        legacyDefaults?.removeObject(forKey: UserTokenManager.legacyDefaultsKey)
     }
 
     private func forgetLocked() {
         token = nil
         claims = UserTokenClaims(expiresAt: nil, subject: nil)
-        defaults?.removeObject(forKey: UserTokenManager.storageKey)
+        store?.remove()
+        legacyDefaults?.removeObject(forKey: UserTokenManager.legacyDefaultsKey)
     }
 }

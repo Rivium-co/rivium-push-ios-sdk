@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDK'
-  s.version          = '0.1.15'
+  s.version          = '0.1.16'
   s.summary          = 'Rivium Push Notification SDK for iOS'
   s.description      = <<-DESC
     Rivium Push is a comprehensive push notification SDK for iOS with support for:
@@ -30,7 +30,7 @@ Pod::Spec.new do |s|
   s.dependency 'CocoaMQTT', '~> 2.1'
 
   # Frameworks required
-  s.frameworks = 'UIKit', 'UserNotifications', 'PushKit', 'CallKit', 'Network'
+  s.frameworks = 'UIKit', 'UserNotifications', 'PushKit', 'CallKit', 'Network', 'Security'
 
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end

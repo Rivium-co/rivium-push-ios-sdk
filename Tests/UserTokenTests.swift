@@ -16,6 +16,32 @@ private func makeToken(sub: String? = "u1", exp: TimeInterval? = nil, tag: Strin
 
 private struct ProviderError: Error {}
 
+/// In-memory stand-in for the Keychain that can be made to fail.
+private final class MemoryTokenStore: UserTokenStore {
+    var token: String?
+    var failReads = false
+    var failWrites = false
+    var failRemoves = false
+    private(set) var writes = 0
+
+    func read() -> String? { failReads ? nil : token }
+
+    @discardableResult
+    func write(_ token: String) -> Bool {
+        guard !failWrites else { return false }
+        self.token = token
+        writes += 1
+        return true
+    }
+
+    @discardableResult
+    func remove() -> Bool {
+        guard !failRemoves else { return false }
+        token = nil
+        return true
+    }
+}
+
 /// Thread-safe counter / box for provider calls made off the main thread.
 private final class Locked<T> {
     private let lock = NSLock()
@@ -225,26 +251,211 @@ final class UserTokenManagerTests: XCTestCase {
     }
 
     func testPersistsLastTokenAndSkipsExpiredOne() {
-        let suite = "co.rivium.push.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MemoryTokenStore()
         let clock = Locked(Date(timeIntervalSince1970: base))
         let token = makeToken(exp: base + 100)
 
-        UserTokenManager(defaults: defaults, now: { clock.value }).set(token)
-        XCTAssertEqual(defaults.string(forKey: UserTokenManager.storageKey), token)
+        UserTokenManager(store: store, now: { clock.value }).set(token)
+        XCTAssertEqual(store.token, token)
 
         // A new process with no provider still has it while it is unexpired.
-        XCTAssertEqual(UserTokenManager(defaults: defaults, now: { clock.value }).current(), token)
+        XCTAssertEqual(UserTokenManager(store: store, now: { clock.value }).current(), token)
 
         clock.value = Date(timeIntervalSince1970: base + 500)
-        XCTAssertNil(UserTokenManager(defaults: defaults, now: { clock.value }).current())
-        XCTAssertNil(defaults.string(forKey: UserTokenManager.storageKey))
+        XCTAssertNil(UserTokenManager(store: store, now: { clock.value }).current())
+        XCTAssertNil(store.token)
 
-        let manager = UserTokenManager(defaults: defaults)
+        let manager = UserTokenManager(store: store)
         manager.set("opaque")
+        XCTAssertEqual(store.token, "opaque")
         manager.clear()
-        XCTAssertNil(defaults.string(forKey: UserTokenManager.storageKey))
+        XCTAssertNil(store.token)
+    }
+
+    // MARK: Storage
+
+    private func withLegacyDefaults(_ body: (UserDefaults) -> Void) {
+        let suite = "co.rivium.push.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        body(defaults)
+    }
+
+    func testMovesTokenFromUserDefaultsToTheStore() {
+        withLegacyDefaults { defaults in
+            let key = UserTokenManager.legacyDefaultsKey
+            let store = MemoryTokenStore()
+            let clock = Locked(Date(timeIntervalSince1970: base))
+            let token = makeToken(exp: base + 100)
+            defaults.set(token, forKey: key)
+
+            let manager = UserTokenManager(store: store, legacyDefaults: defaults, now: { clock.value })
+            XCTAssertEqual(manager.current(), token)
+            XCTAssertEqual(store.token, token)
+            XCTAssertNil(defaults.string(forKey: key))
+
+            // The next launch reads it from the store alone.
+            XCTAssertEqual(UserTokenManager(store: store, legacyDefaults: defaults, now: { clock.value }).current(), token)
+            XCTAssertEqual(store.writes, 1)
+        }
+    }
+
+    func testFreshInstallDropsTokenLeftByPreviousInstall() {
+        withLegacyDefaults { defaults in
+            let store = MemoryTokenStore()
+            store.token = "from-previous-install"
+
+            XCTAssertNil(UserTokenManager(store: store, legacyDefaults: defaults).current())
+            XCTAssertNil(store.token)
+
+            // Later launches of the same install keep what was saved.
+            store.token = "saved-by-this-install"
+            XCTAssertEqual(UserTokenManager(store: store, legacyDefaults: defaults).current(), "saved-by-this-install")
+        }
+    }
+
+    func testStoreWinsOverLeftoverUserDefaultsValue() {
+        withLegacyDefaults { defaults in
+            let key = UserTokenManager.legacyDefaultsKey
+            let store = MemoryTokenStore()
+            store.token = "from-store"
+            defaults.set("left-behind", forKey: key)
+
+            XCTAssertEqual(UserTokenManager(store: store, legacyDefaults: defaults).current(), "from-store")
+            XCTAssertEqual(store.token, "from-store")
+            XCTAssertNil(defaults.string(forKey: key))
+        }
+    }
+
+    func testExpiredUserDefaultsTokenIsDroppedNotMoved() {
+        withLegacyDefaults { defaults in
+            let key = UserTokenManager.legacyDefaultsKey
+            let store = MemoryTokenStore()
+            defaults.set(makeToken(exp: base - 1), forKey: key)
+
+            let manager = UserTokenManager(
+                store: store, legacyDefaults: defaults, now: { Date(timeIntervalSince1970: self.base) }
+            )
+            XCTAssertNil(manager.current())
+            XCTAssertNil(store.token)
+            XCTAssertEqual(store.writes, 0)
+            XCTAssertNil(defaults.string(forKey: key))
+        }
+    }
+
+    func testClearRemovesStoreAndUserDefaults() {
+        withLegacyDefaults { defaults in
+            let key = UserTokenManager.legacyDefaultsKey
+            let store = MemoryTokenStore()
+            store.failWrites = true  // the move fails, so both places hold a token
+            defaults.set("legacy", forKey: key)
+            let manager = UserTokenManager(store: store, legacyDefaults: defaults)
+            XCTAssertEqual(manager.current(), "legacy")
+            XCTAssertEqual(defaults.string(forKey: key), "legacy")
+            store.token = "stale"
+
+            manager.clear()
+            XCTAssertNil(manager.current())
+            XCTAssertNil(store.token)
+            XCTAssertNil(defaults.string(forKey: key))
+        }
+    }
+
+    func testSettingATokenNeverWritesUserDefaults() {
+        withLegacyDefaults { defaults in
+            let key = UserTokenManager.legacyDefaultsKey
+            let store = MemoryTokenStore()
+            defaults.set("legacy", forKey: key)
+            let manager = UserTokenManager(store: store, legacyDefaults: defaults)
+
+            manager.set("new")
+            XCTAssertEqual(store.token, "new")
+            XCTAssertNil(defaults.string(forKey: key))
+
+            store.failWrites = true
+            manager.set("newer")
+            XCTAssertNil(defaults.string(forKey: key), "no fallback to UserDefaults")
+        }
+    }
+
+    func testFailedReadMeansNoSavedToken() {
+        let store = MemoryTokenStore()
+        store.token = "saved"
+        store.failReads = true
+
+        let manager = UserTokenManager(store: store)
+        XCTAssertNil(manager.current())
+        XCTAssertNil(get(manager))
+
+        // The SDK keeps working from memory.
+        manager.set("fresh")
+        XCTAssertEqual(get(manager), "fresh")
+    }
+
+    func testFailedWriteKeepsTokenInMemoryOnly() {
+        let store = MemoryTokenStore()
+        store.token = "older"
+        store.failWrites = true
+
+        let manager = UserTokenManager(store: store)
+        manager.set("fresh")
+        XCTAssertEqual(manager.current(), "fresh")
+        XCTAssertEqual(get(manager), "fresh")
+        XCTAssertNil(store.token, "an older saved token is not left behind")
+        XCTAssertNil(UserTokenManager(store: store).current())
+    }
+
+    func testStoreThatFailsEverythingIsTolerated() {
+        withLegacyDefaults { defaults in
+            let key = UserTokenManager.legacyDefaultsKey
+            let store = MemoryTokenStore()
+            store.failReads = true
+            store.failWrites = true
+            store.failRemoves = true
+            defaults.set("legacy", forKey: key)
+
+            let manager = UserTokenManager(provider: { "from-provider" }, store: store, legacyDefaults: defaults)
+            // Not moved, so it is still there for the next launch to move.
+            XCTAssertEqual(manager.current(), "legacy")
+            XCTAssertEqual(defaults.string(forKey: key), "legacy")
+
+            XCTAssertEqual(refresh(manager), "from-provider")
+            manager.prepare(forUserId: "someone")
+            manager.clear()
+            XCTAssertNil(manager.current())
+            XCTAssertNil(defaults.string(forKey: key))
+        }
+    }
+
+    func testSavedTokenOfAnotherUserIsDropped() {
+        let store = MemoryTokenStore()
+        store.token = makeToken(sub: "alice")
+
+        let manager = UserTokenManager(store: store)
+        manager.prepare(forUserId: "bob")
+        XCTAssertNil(manager.current())
+        XCTAssertNil(store.token)
+    }
+
+    /// Runs against the real Keychain. A test bundle without a host app may
+    /// not be allowed to use it; the store must then report failure, not crash.
+    func testKeychainStoreRoundTripOrFailsQuietly() {
+        let store = KeychainUserTokenStore(
+            service: "co.rivium.push.tests.\(UUID().uuidString)", account: "userToken"
+        )
+        defer { store.remove() }
+
+        guard store.write("first") else {
+            XCTAssertNil(store.read())
+            store.remove()
+            return
+        }
+        XCTAssertEqual(store.read(), "first")
+        XCTAssertTrue(store.write("second"))
+        XCTAssertEqual(store.read(), "second")
+        XCTAssertTrue(store.remove())
+        XCTAssertNil(store.read())
+        XCTAssertTrue(store.remove(), "removing nothing is not a failure")
     }
 
     /// A provider written for another Rivium SDK (non-optional result) fits as is.

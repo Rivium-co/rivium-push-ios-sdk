@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.16] - 2026-10-02
+
+### Changed
+- The signed user token is kept in the Keychain instead of UserDefaults. A token saved by 0.1.15 is moved over on first launch.
+
 ## [0.1.15] - 2026-10-02
 
 ### Added

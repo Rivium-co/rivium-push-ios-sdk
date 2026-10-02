@@ -51,9 +51,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private var abTestingManager: ABTestingManager?
     private var receiptStore: DeliveryReceiptStore?
 
-    /// Signed user token, kept next to the SDK's other saved state. Lives
-    /// outside `config` so a provider can be set before or after initialize().
-    private let userTokens = UserTokenManager(defaults: .standard)
+    /// Signed user token, kept in the Keychain. Lives outside `config` so a
+    /// provider can be set before or after initialize().
+    private let userTokens = UserTokenManager(store: KeychainUserTokenStore(), legacyDefaults: .standard)
 
     /// Called when the server refuses the signed user token (`token_invalid`,
     /// `token_required`, `token_expired` after a failed refresh,
