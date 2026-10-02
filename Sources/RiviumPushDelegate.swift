@@ -110,6 +110,9 @@ public protocol RiviumPushDelegate: AnyObject {
 
     /// Called when a notification is tapped (for real-time handling when app is in foreground)
     func riviumPush(_ riviumPush: RiviumPush, didTapNotification message: RiviumPushMessage)
+
+    /// Called when the server refuses the signed user token, or the token provider fails
+    func riviumPush(_ riviumPush: RiviumPush, didFailWithAuthError event: RiviumPushAuthErrorEvent)
 }
 
 /// Default implementations (all optional)
@@ -130,4 +133,5 @@ public extension RiviumPushDelegate {
     func riviumPush(_ riviumPush: RiviumPush, didDetectAppUpdate info: AppUpdateInfo) {}
     func riviumPush(_ riviumPush: RiviumPush, didReceiveNotificationAction action: NotificationAction, forMessage message: RiviumPushMessage) {}
     func riviumPush(_ riviumPush: RiviumPush, didTapNotification message: RiviumPushMessage) {}
+    func riviumPush(_ riviumPush: RiviumPush, didFailWithAuthError event: RiviumPushAuthErrorEvent) {}
 }

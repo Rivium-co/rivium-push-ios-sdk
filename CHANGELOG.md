@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.15] - 2026-10-02
+
+### Added
+- Signed user tokens (optional): `tokenProvider` in the config, `setTokenProvider(_:)` and `setUserToken(_:)`. The token is sent as `x-user-token` on every request, renewed before it expires and retried once when the server reports it expired.
+- `onAuthError` and the delegate's `didFailWithAuthError` report a refused token or a failing provider.
+
+Apps that do not set a token provider are not affected.
+
 ## [0.1.14] - 2026-09-29
 
 ### Changed

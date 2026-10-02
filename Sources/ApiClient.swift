@@ -6,9 +6,25 @@ internal class ApiClient {
     private let retrySession: RetryingURLSession
     private let TAG = "ApiClient"
 
-    init(config: RiviumPushConfig) {
+    /// The signed user token sent as `x-user-token`, when the app provides one.
+    let userTokens: UserTokenManager
+
+    /// The server refused the user's identity, or the token provider failed.
+    /// Informational: the request's own completion is unchanged. Called on
+    /// the main queue.
+    var onAuthError: ((RiviumPushAuthErrorEvent) -> Void)?
+
+    init(
+        config: RiviumPushConfig,
+        userTokens: UserTokenManager? = nil,
+        session: RetryingURLSession = RetryingURLSession()
+    ) {
         self.config = config
-        self.retrySession = RetryingURLSession()
+        self.retrySession = session
+        self.userTokens = userTokens ?? UserTokenManager(provider: config.tokenProvider)
+        self.userTokens.onProviderFailure = { [weak self] error in
+            self?.reportAuthError(code: "token_provider_failed", message: "tokenProvider failed", error: error)
+        }
     }
 
     // MARK: - Request/Response Types
@@ -180,7 +196,7 @@ internal class ApiClient {
         post(url: url, body: body, completion: completion)
     }
 
-    /// Clear user ID for device
+    /// Clear user ID for device. Also forgets the cached user token.
     func clearUserId(
         deviceId: String,
         completion: @escaping (Result<GenericResponse, Error>) -> Void
@@ -190,7 +206,8 @@ internal class ApiClient {
             return
         }
 
-        delete(url: url, completion: completion)
+        // The request still carries the user's token; it is forgotten right after.
+        delete(url: url, forgetUserToken: true, completion: completion)
     }
 
     // MARK: - PN Protocol Token
@@ -431,6 +448,8 @@ internal class ApiClient {
             apiKey: config.apiKey,
             serverUrl: config.serverUrl,
             sdkHeader: config.sdkHeaderValue,
+            // Only a token already at hand: a receipt never waits for the provider.
+            userToken: userTokens.current(),
             maxAttempts: 3,
             timeout: NetworkConfig.requestTimeout,
             completion: completion
@@ -571,6 +590,7 @@ internal class ApiClient {
 
     private func delete<R: Decodable>(
         url: URL,
+        forgetUserToken: Bool = false,
         completion: @escaping (Result<R, Error>) -> Void
     ) {
         var request = URLRequest(url: url)
@@ -578,16 +598,107 @@ internal class ApiClient {
         request.setValue(config.apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(config.sdkHeaderValue, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
 
-        executeRequest(request, completion: completion)
+        executeRequest(request, forgetUserToken: forgetUserToken, completion: completion)
+    }
+
+    // MARK: - User Token
+
+    /// Sends `request`, adding the user token when one is available. Every
+    /// request to the API goes through here.
+    ///
+    /// Without a token (no provider, signed out, provider failed) the request
+    /// goes out exactly as built. An expired token is routine: fetch a new one
+    /// and replay the request once.
+    private func send(
+        _ request: URLRequest,
+        forgetUserToken: Bool = false,
+        completion: @escaping (Data?, URLResponse?, Error?) -> Void
+    ) {
+        userTokens.get { [self] token in
+            if forgetUserToken, let token = token { self.userTokens.clear(ifTokenIs: token) }
+
+            self.retrySession.dataTask(with: self.withUserToken(request, token)) { data, response, error in
+                guard let token = token, self.isTokenExpired(response, data) else {
+                    self.reportAuthError(response: response, data: data, sentToken: token)
+                    completion(data, response, error)
+                    return
+                }
+
+                self.userTokens.refresh { fresh in
+                    guard let fresh = fresh, fresh != token else {
+                        // No newer token to try: stop sending the expired one.
+                        self.userTokens.clear(ifTokenIs: token)
+                        self.reportAuthError(response: response, data: data, sentToken: token)
+                        completion(data, response, error)
+                        return
+                    }
+                    if forgetUserToken { self.userTokens.clear(ifTokenIs: fresh) }
+
+                    Log.d(self.TAG, "User token expired, retrying once with a new one")
+                    self.retrySession.dataTask(with: self.withUserToken(request, fresh)) { data, response, error in
+                        self.reportAuthError(response: response, data: data, sentToken: fresh)
+                        completion(data, response, error)
+                    }
+                }
+            }
+        }
+    }
+
+    private func withUserToken(_ request: URLRequest, _ token: String?) -> URLRequest {
+        guard let token = token else { return request }
+        var request = request
+        request.setValue(token, forHTTPHeaderField: "x-user-token")
+        return request
+    }
+
+    private func isTokenExpired(_ response: URLResponse?, _ data: Data?) -> Bool {
+        return (response as? HTTPURLResponse)?.statusCode == 401 && Self.authErrorCode(data) == "token_expired"
+    }
+
+    /// Reports an identity error in a response, if it is one.
+    private func reportAuthError(response: URLResponse?, data: Data?, sentToken: String?) {
+        guard let status = (response as? HTTPURLResponse)?.statusCode else { return }
+
+        if status == 401, let code = Self.authErrorCode(data) {
+            // A rejected token is not worth sending again.
+            if code == "token_invalid", let sentToken = sentToken { userTokens.clear(ifTokenIs: sentToken) }
+            reportAuthError(code: code, message: Self.authErrorMessage(data) ?? "Authentication failed", error: nil)
+        } else if status == 403, sentToken != nil,
+                  let message = Self.authErrorMessage(data),
+                  message.contains("does not match the user token") {
+            reportAuthError(code: "token_mismatch", message: message, error: nil)
+        }
+    }
+
+    private func reportAuthError(code: String, message: String, error: Error?) {
+        Log.w(TAG, "User token error: \(code)")
+        DispatchQueue.main.async { [weak self] in
+            self?.onAuthError?(RiviumPushAuthErrorEvent(code: code, message: message, error: error))
+        }
+    }
+
+    /// The identity error code (`token_*`) of a response body, if any.
+    private static func authErrorCode(_ data: Data?) -> String? {
+        guard let data = data,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let code = json["code"] as? String, code.hasPrefix("token_") else { return nil }
+        return code
+    }
+
+    private static func authErrorMessage(_ data: Data?) -> String? {
+        guard let data = data,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return json["message"] as? String
     }
 
     private func executeRequest<R: Decodable>(
         _ request: URLRequest,
+        forgetUserToken: Bool = false,
         completion: @escaping (Result<R, Error>) -> Void
     ) {
         Log.d(TAG, "\(request.httpMethod ?? "?") \(request.url?.absoluteString ?? "")")
 
-        retrySession.dataTask(with: request) { [self] data, response, error in
+        send(request, forgetUserToken: forgetUserToken) { [self] data, response, error in
             if let error = error {
                 Log.e(self.TAG, "Request failed", error: error)
                 DispatchQueue.main.async {
@@ -633,7 +744,7 @@ internal class ApiClient {
     ) {
         Log.d(TAG, "\(request.httpMethod ?? "?") \(request.url?.absoluteString ?? "")")
 
-        retrySession.dataTask(with: request) { [self] data, response, error in
+        send(request) { [self] data, response, error in
             if let error = error {
                 Log.e(self.TAG, "Request failed", error: error)
                 DispatchQueue.main.async {

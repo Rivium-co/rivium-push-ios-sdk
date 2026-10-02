@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDKExtension'
-  s.version          = '0.1.14'
+  s.version          = '0.1.15'
   s.summary          = 'Delivery confirmation for Rivium Push, for a Notification Service Extension.'
 
   s.description      = <<-DESC

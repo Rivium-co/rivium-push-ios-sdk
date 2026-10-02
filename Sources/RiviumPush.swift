@@ -51,6 +51,17 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private var abTestingManager: ABTestingManager?
     private var receiptStore: DeliveryReceiptStore?
 
+    /// Signed user token, kept next to the SDK's other saved state. Lives
+    /// outside `config` so a provider can be set before or after initialize().
+    private let userTokens = UserTokenManager(defaults: .standard)
+
+    /// Called when the server refuses the signed user token (`token_invalid`,
+    /// `token_required`, `token_expired` after a failed refresh,
+    /// `token_mismatch`) or the token provider fails (`token_provider_failed`).
+    /// Informational: requests report their own errors as before. Called on
+    /// the main queue, together with the delegate's `didFailWithAuthError`.
+    public var onAuthError: ((RiviumPushAuthErrorEvent) -> Void)?
+
     /// An explicit register() is in progress; auto refresh stays out of its way.
     private var explicitRegisterInFlight = false
     /// Auto refresh asked iOS for a push token and is waiting to decide.
@@ -77,7 +88,16 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// Initialize the SDK
     public func initialize(config: RiviumPushConfig) {
         self.config = config
-        self.apiClient = ApiClient(config: config)
+        if let tokenProvider = config.tokenProvider {
+            userTokens.setProvider(tokenProvider)
+        }
+        let apiClient = ApiClient(config: config, userTokens: userTokens)
+        apiClient.onAuthError = { [weak self] event in
+            guard let self = self else { return }
+            self.onAuthError?(event)
+            self.delegate?.riviumPush(self, didFailWithAuthError: event)
+        }
+        self.apiClient = apiClient
         self.deviceId = getOrCreateDeviceId()
         // Restore previously-issued subscriptionId so the socket can subscribe to
         // the new topic immediately on launch — register() will refresh it.
@@ -85,6 +105,8 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         // Use saved appId from server if available, otherwise fallback to apiKey prefix
         self.appId = loadSavedAppId() ?? String(config.apiKey.prefix(16))
         self.userId = UserDefaults.standard.string(forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
+        // A saved token of another user is never sent for this one.
+        if let userId = self.userId { userTokens.prepare(forUserId: userId) }
         self.receiptStore = DeliveryReceiptStore(appGroup: config.appGroup)
         self.isInitialized = true
 
@@ -149,6 +171,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         // persisted userId restored at init.
         if let userId = userId {
             self.userId = userId
+            userTokens.prepare(forUserId: userId)
             // Save to UserDefaults on background queue to avoid blocking main thread
             RiviumPushDispatch.io {
                 UserDefaults.standard.set(userId, forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
@@ -198,6 +221,8 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
                     Log.e(RiviumPush.TAG, "Failed to detach user on unregister", error: error)
                 }
             }
+        } else {
+            userTokens.clear()
         }
 
         // Clear user ID
@@ -440,6 +465,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         Log.d(RiviumPush.TAG, "Setting user ID: \(userId)")
 
         self.userId = userId
+        // A cached token of another user is dropped; the provider is asked
+        // again before the request.
+        userTokens.prepare(forUserId: userId)
         // Save to UserDefaults on background queue
         RiviumPushDispatch.io {
             UserDefaults.standard.set(userId, forKey: "\(RiviumPush.PREFS_NAME).\(RiviumPush.KEY_USER_ID)")
@@ -490,6 +518,32 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
                 self.delegate?.riviumPush(self, didFailWithError: error)
             }
         }
+    }
+
+    // MARK: - Signed User Tokens
+
+    /// Set, replace or remove (nil) the signed user token provider.
+    ///
+    /// Works before or after `initialize(config:)`. The provider is called off
+    /// the main thread and may switch to the main queue. If it throws or does
+    /// not answer within 10 seconds, the request is sent without a token and
+    /// an auth error (`token_provider_failed`) is reported.
+    public func setTokenProvider(_ provider: RiviumPushTokenProvider?) {
+        userTokens.setProvider(provider)
+    }
+
+    /// Completion-handler form of `setTokenProvider(_:)`. Call `completion`
+    /// once, from any thread, with the token or nil when no user is signed in.
+    public func setTokenProvider(callback provider: RiviumPushTokenCallbackProvider?) {
+        userTokens.setCallbackProvider(provider)
+    }
+
+    /// Hand the SDK a signed user token you fetched yourself (nil forgets it).
+    ///
+    /// Without a provider the SDK cannot renew it: call this again with a new
+    /// token before it expires, or when `token_expired` is reported.
+    public func setUserToken(_ token: String?) {
+        userTokens.set(token)
     }
 
     // MARK: - Initial Message & Actions

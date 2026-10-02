@@ -109,6 +109,26 @@ RiviumPush.shared.setUserId("user_123")
 RiviumPush.shared.clearUserId()
 ```
 
+### Signed user tokens
+
+Optional. If your backend issues Rivium user tokens, give the SDK a `tokenProvider` and it sends the token with every request, so the server can verify which user a device belongs to. It is the same token, and the same function, you pass to Rivium Chat.
+
+```swift
+// Returns the token from your backend, or nil when no user is signed in.
+let tokenProvider: () async throws -> String? = {
+    try await MyBackend.fetchRiviumToken()
+}
+
+let config = RiviumPushConfig(apiKey: "rv_live_your_api_key", tokenProvider: tokenProvider)
+RiviumPush.shared.initialize(config: config)
+
+RiviumPush.shared.onAuthError = { event in
+    print("Rivium token problem: \(event.code)")  // e.g. send the user to login
+}
+```
+
+The SDK caches the token, renews it shortly before it expires and forgets it on `clearUserId()`. You can also set the provider later with `setTokenProvider(_:)`, or pass a token you fetched yourself with `setUserToken(_:)`. Without a provider nothing changes.
+
 ### Topics
 
 ```swift

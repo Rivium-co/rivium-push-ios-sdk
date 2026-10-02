@@ -47,7 +47,8 @@ let package = Package(
                 "Internal/SdkCredentials.swift",
                 "Internal/InstallId.swift",
                 "Internal/MqttEndpoints.swift",
-                "Internal/ConnectivityMonitor.swift"
+                "Internal/ConnectivityMonitor.swift",
+                "Internal/UserToken.swift"
             ]
         ),
         .testTarget(

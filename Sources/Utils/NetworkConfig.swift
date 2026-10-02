@@ -45,8 +45,9 @@ internal class RetryingURLSession {
     private let session: URLSession
     private let TAG = "RetryingURLSession"
 
-    init(delegate: URLSessionDelegate? = nil) {
+    init(delegate: URLSessionDelegate? = nil, protocolClasses: [AnyClass]? = nil) {
         let config = URLSessionConfiguration.default
+        if let protocolClasses = protocolClasses { config.protocolClasses = protocolClasses }
         config.timeoutIntervalForRequest = NetworkConfig.requestTimeout
         config.timeoutIntervalForResource = NetworkConfig.resourceTimeout
         self.session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)

@@ -14,7 +14,7 @@ internal enum RiviumPushSDKInfo {
 
     /// Single source of truth for the SDK version. Must match both podspecs;
     /// `SdkIdentityTests` fails when they drift.
-    static let version = "0.1.14"
+    static let version = "0.1.15"
 
     /// Header carrying the SDK identity on every request.
     static let headerName = "X-Rivium-SDK"
@@ -127,6 +127,7 @@ internal enum DeliveryReceiptSender {
         apiKey: String,
         serverUrl: String,
         sdkHeader: String,
+        userToken: String? = nil,
         maxAttempts: Int,
         timeout: TimeInterval,
         session: URLSession = .shared,
@@ -144,6 +145,9 @@ internal enum DeliveryReceiptSender {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue(sdkHeader, forHTTPHeaderField: RiviumPushSDKInfo.headerName)
+        if let userToken = userToken, !userToken.isEmpty {
+            request.setValue(userToken, forHTTPHeaderField: "x-user-token")
+        }
         request.timeoutInterval = timeout
         request.httpBody = body
 

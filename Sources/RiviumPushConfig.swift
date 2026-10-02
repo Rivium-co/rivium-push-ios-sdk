@@ -86,6 +86,14 @@ public struct RiviumPushConfig {
     /// Version of the official wrapper SDK. See `wrapperSdkName`.
     public let wrapperSdkVersion: String?
 
+    /// Returns the signed user token for the signed-in user (optional).
+    ///
+    /// The same token, and the same function, the other Rivium SDKs take. The
+    /// SDK calls it when it needs a token and again shortly before the token
+    /// expires. Return nil when no user is signed in. Can also be set later
+    /// with `RiviumPush.shared.setTokenProvider(_:)`.
+    public let tokenProvider: RiviumPushTokenProvider?
+
     public init(
         apiKey: String,
         pnHost: String = "",
@@ -103,9 +111,11 @@ public struct RiviumPushConfig {
         appGroup: String? = nil,
         autoRefresh: Bool = true,
         wrapperSdkName: String? = nil,
-        wrapperSdkVersion: String? = nil
+        wrapperSdkVersion: String? = nil,
+        tokenProvider: RiviumPushTokenProvider? = nil
     ) {
         self.apiKey = apiKey
+        self.tokenProvider = tokenProvider
         self.appGroup = appGroup
         self.autoRefresh = autoRefresh
         self.wrapperSdkName = wrapperSdkName
@@ -190,9 +200,17 @@ public struct RiviumPushConfig {
         private var autoRefresh: Bool = true
         private var wrapperSdkName: String? = nil
         private var wrapperSdkVersion: String? = nil
+        private var tokenProvider: RiviumPushTokenProvider? = nil
 
         public init(apiKey: String) {
             self.apiKey = apiKey
+        }
+
+        /// Signed user token provider (optional). See `RiviumPushConfig.tokenProvider`.
+        @discardableResult
+        public func tokenProvider(_ provider: @escaping RiviumPushTokenProvider) -> Builder {
+            self.tokenProvider = provider
+            return self
         }
 
         /// Refresh the registration automatically on launch (default: true).
@@ -306,7 +324,8 @@ public struct RiviumPushConfig {
                 appGroup: appGroup,
                 autoRefresh: autoRefresh,
                 wrapperSdkName: wrapperSdkName,
-                wrapperSdkVersion: wrapperSdkVersion
+                wrapperSdkVersion: wrapperSdkVersion,
+                tokenProvider: tokenProvider
             )
         }
     }
