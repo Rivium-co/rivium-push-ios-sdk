@@ -14,7 +14,7 @@ internal enum RiviumPushSDKInfo {
 
     /// Single source of truth for the SDK version. Must match both podspecs;
     /// `SdkIdentityTests` fails when they drift.
-    static let version = "0.1.16"
+    static let version = "0.1.17"
 
     /// Header carrying the SDK identity on every request.
     static let headerName = "X-Rivium-SDK"
@@ -45,8 +45,12 @@ internal enum RiviumPushSDKInfo {
         return (name, version)
     }
 
+    /// `name/version`; for a wrapper, the native SDK underneath follows,
+    /// User-Agent style: `flutter/0.1.22 ios/0.1.17` (wrapper first). Only
+    /// public SDK names and versions — never a key, user or device detail.
     static func headerValue(name: String, version: String) -> String {
-        return "\(name)/\(version)"
+        if name == self.name { return "\(name)/\(version)" }
+        return "\(name)/\(version) \(self.name)/\(self.version)"
     }
 }
 

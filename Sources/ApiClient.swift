@@ -614,6 +614,15 @@ internal class ApiClient {
         forgetUserToken: Bool = false,
         completion: @escaping (Data?, URLResponse?, Error?) -> Void
     ) {
+        // SDK self-report on this request; cleared only when the server answers 2xx.
+        var request = request
+        let report = SdkDiagnostics.shared.attach(to: &request)
+        let completion: (Data?, URLResponse?, Error?) -> Void = { data, response, error in
+            if !report.isEmpty, let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                SdkDiagnostics.shared.acknowledge(report)
+            }
+            completion(data, response, error)
+        }
         userTokens.get { [self] token in
             if forgetUserToken, let token = token { self.userTokens.clear(ifTokenIs: token) }
 

@@ -49,8 +49,10 @@ let package = Package(
                 "Internal/MqttEndpoints.swift",
                 "Internal/ConnectivityMonitor.swift",
                 "Internal/UserToken.swift",
-                "Internal/UserTokenStore.swift"
-            ]
+                "Internal/UserTokenStore.swift",
+                "Internal/SdkDiagnostics.swift"
+            ],
+            resources: [.copy("PrivacyInfo.xcprivacy")]
         ),
         .testTarget(
             name: "RiviumPushTests",

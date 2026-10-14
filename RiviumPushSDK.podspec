@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDK'
-  s.version          = '0.1.16'
+  s.version          = '0.1.17'
   s.summary          = 'Rivium Push Notification SDK for iOS'
   s.description      = <<-DESC
     Rivium Push is a comprehensive push notification SDK for iOS with support for:
@@ -24,6 +24,7 @@ Pod::Spec.new do |s|
   # Source files - exclude PNProtocol/ since it comes from the PNProtocol pod dependency
   s.source_files = 'Sources/**/*.swift'
   s.exclude_files = 'Sources/PNProtocol/**/*'
+  s.resource_bundles = { 'RiviumPushSDK_Privacy' => ['Sources/PrivacyInfo.xcprivacy'] }
 
   # Dependencies
   s.dependency 'PNProtocol', '~> 0.2', '>= 0.2.2'

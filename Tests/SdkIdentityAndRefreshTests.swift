@@ -24,7 +24,7 @@ final class SdkIdentityTests: XCTestCase {
 
     func testWrapperIdentityReplacesNative() {
         let config = RiviumPushConfig.builder(apiKey: "k").wrapperSdk(name: "flutter", version: "0.1.16").build()
-        XCTAssertEqual(config.sdkHeaderValue, "flutter/0.1.16")
+        XCTAssertEqual(config.sdkHeaderValue, "flutter/0.1.16 ios/\(RiviumPush.sdkVersion)")
     }
 
     func testWrapperIdentityNeedsBothFields() {

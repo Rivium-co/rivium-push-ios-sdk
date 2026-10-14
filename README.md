@@ -214,6 +214,7 @@ let config = RiviumPushConfig.builder(apiKey: "your_key")
 | `autoConnect` | `true` | Auto-connect when app enters foreground |
 | `autoReconnect` | `true` | Auto-reconnect with exponential backoff |
 | `autoRefresh` | `true` | Refresh the registration on launch when it may be stale (see below) |
+| `sendDiagnostics` | `true` | Send counts of the SDK's own errors (by error code, no personal data) with its requests |
 | `appGroup` | `nil` | App Group shared with a Notification Service Extension, for delivery confirmation |
 
 ### Automatic registration refresh

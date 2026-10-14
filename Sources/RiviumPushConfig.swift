@@ -94,6 +94,12 @@ public struct RiviumPushConfig {
     /// with `RiviumPush.shared.setTokenProvider(_:)`.
     public let tokenProvider: RiviumPushTokenProvider?
 
+    /// Send the SDK's own error counts to Rivium (default true): per public `RiviumPushErrorCode` number how often it
+    /// happened, on the next ordinary API request in the `X-Rivium-SDK-Report`
+    /// header. Counts only — never a message, stack trace, user or device
+    /// detail. False: nothing is counted, kept or sent.
+    public let sendDiagnostics: Bool
+
     public init(
         apiKey: String,
         pnHost: String = "",
@@ -112,10 +118,12 @@ public struct RiviumPushConfig {
         autoRefresh: Bool = true,
         wrapperSdkName: String? = nil,
         wrapperSdkVersion: String? = nil,
-        tokenProvider: RiviumPushTokenProvider? = nil
+        tokenProvider: RiviumPushTokenProvider? = nil,
+        sendDiagnostics: Bool = true
     ) {
         self.apiKey = apiKey
         self.tokenProvider = tokenProvider
+        self.sendDiagnostics = sendDiagnostics
         self.appGroup = appGroup
         self.autoRefresh = autoRefresh
         self.wrapperSdkName = wrapperSdkName
@@ -201,6 +209,7 @@ public struct RiviumPushConfig {
         private var wrapperSdkName: String? = nil
         private var wrapperSdkVersion: String? = nil
         private var tokenProvider: RiviumPushTokenProvider? = nil
+        private var sendDiagnostics: Bool = true
 
         public init(apiKey: String) {
             self.apiKey = apiKey
@@ -210,6 +219,13 @@ public struct RiviumPushConfig {
         @discardableResult
         public func tokenProvider(_ provider: @escaping RiviumPushTokenProvider) -> Builder {
             self.tokenProvider = provider
+            return self
+        }
+
+        /// Send the SDK's own error counts (default: true). See `RiviumPushConfig.sendDiagnostics`.
+        @discardableResult
+        public func sendDiagnostics(_ enabled: Bool) -> Builder {
+            self.sendDiagnostics = enabled
             return self
         }
 
@@ -325,7 +341,8 @@ public struct RiviumPushConfig {
                 autoRefresh: autoRefresh,
                 wrapperSdkName: wrapperSdkName,
                 wrapperSdkVersion: wrapperSdkVersion,
-                tokenProvider: tokenProvider
+                tokenProvider: tokenProvider,
+                sendDiagnostics: sendDiagnostics
             )
         }
     }

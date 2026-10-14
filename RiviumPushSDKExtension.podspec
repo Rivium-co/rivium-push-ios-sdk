@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'RiviumPushSDKExtension'
-  s.version          = '0.1.16'
+  s.version          = '0.1.17'
   s.summary          = 'Delivery confirmation for Rivium Push, for a Notification Service Extension.'
 
   s.description      = <<-DESC
@@ -24,6 +24,7 @@ Pod::Spec.new do |s|
 
   s.source_files = ['Sources/RiviumPushServiceExtension.swift', 'Sources/RiviumPushShared.swift']
   s.frameworks   = 'UserNotifications'
+  s.resource_bundles = { 'RiviumPushSDKExtension_Privacy' => ['Privacy/Extension/PrivacyInfo.xcprivacy'] }
 
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',

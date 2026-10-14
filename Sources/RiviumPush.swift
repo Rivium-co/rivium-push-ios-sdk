@@ -88,6 +88,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     /// Initialize the SDK
     public func initialize(config: RiviumPushConfig) {
         self.config = config
+        SdkDiagnostics.shared.setEnabled(config.sendDiagnostics)
         if let tokenProvider = config.tokenProvider {
             userTokens.setProvider(tokenProvider)
         }
@@ -163,7 +164,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         guard let config = config else {
             let error = RiviumPushError.notInitialized
             delegate?.riviumPush(self, didFailWithError: error)
-            delegate?.riviumPush(self, didFailWithDetailedError: error)
+            failDetailed(error)
             return
         }
 
@@ -425,7 +426,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             case .failure(let error):
                 Log.e(RiviumPush.TAG, "Failed to subscribe to topic", error: error)
                 self.delegate?.riviumPush(self, didFailWithError: error)
-                self.delegate?.riviumPush(self, didFailWithDetailedError: RiviumPushError(errorCode: .subscriptionFailed, cause: error))
+                self.failDetailed(RiviumPushError(errorCode: .subscriptionFailed, cause: error))
             }
         }
     }
@@ -448,7 +449,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             case .failure(let error):
                 Log.e(RiviumPush.TAG, "Failed to unsubscribe from topic", error: error)
                 self.delegate?.riviumPush(self, didFailWithError: error)
-                self.delegate?.riviumPush(self, didFailWithDetailedError: RiviumPushError(errorCode: .unsubscriptionFailed, cause: error))
+                self.failDetailed(RiviumPushError(errorCode: .unsubscriptionFailed, cause: error))
             }
         }
     }
@@ -1219,7 +1220,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         guard let deviceId = deviceId else {
             let error = RiviumPushError.notInitialized
             delegate?.riviumPush(self, didFailWithError: error)
-            delegate?.riviumPush(self, didFailWithDetailedError: error)
+            failDetailed(error)
             return
         }
 
@@ -1346,7 +1347,7 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
             case .failure(let error):
                 Log.e(RiviumPush.TAG, "Registration failed", error: error)
                 self.delegate?.riviumPush(self, didFailWithError: error)
-                self.delegate?.riviumPush(self, didFailWithDetailedError: RiviumPushError(errorCode: .registrationFailed, cause: error))
+                self.failDetailed(RiviumPushError(errorCode: .registrationFailed, cause: error))
             }
         }
     }
@@ -1525,7 +1526,7 @@ extension RiviumPush: VoIPManager.VoIPManagerDelegate {
 
     func voipManager(_ manager: VoIPManager, didFailWithError error: Error) {
         delegate?.riviumPush(self, didFailWithError: error)
-        delegate?.riviumPush(self, didFailWithDetailedError: RiviumPushError.fromException(error))
+        failDetailed(RiviumPushError.fromException(error))
     }
 }
 
@@ -1535,11 +1536,18 @@ extension RiviumPush: PNSocketManager.PNSocketManagerDelegate {
         delegate?.riviumPush(self, didChangeConnectionState: success)
     }
 
+    /// Every detailed error the SDK reports to the app is also counted for the
+    /// SDK self-report (`SdkDiagnostics`) — by its public code, nothing else.
+    private func failDetailed(_ error: RiviumPushError) {
+        SdkDiagnostics.shared.count(error.errorCode)
+        delegate?.riviumPush(self, didFailWithDetailedError: error)
+    }
+
     func pnSocketManager(_ manager: PNSocketManager, didDisconnect error: Error?) {
         delegate?.riviumPush(self, didChangeConnectionState: false)
 
         if let error = error {
-            delegate?.riviumPush(self, didFailWithDetailedError: RiviumPushError.fromException(error))
+            failDetailed(RiviumPushError.fromException(error))
         }
     }
 

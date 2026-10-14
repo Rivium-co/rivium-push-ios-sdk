@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.17] - 2026-10-14
+
+### Added
+- `sendDiagnostics` (default `true`): the SDK sends counts of its own errors, by error code, with its next request. Counts only, no personal data.
+- Privacy manifests (`PrivacyInfo.xcprivacy`) for `RiviumPushSDK` and `RiviumPushSDKExtension`.
+
+### Changed
+- Inside the Flutter or React Native SDK, requests also name the native SDK version.
+
 ## [0.1.16] - 2026-10-02
 
 ### Changed
