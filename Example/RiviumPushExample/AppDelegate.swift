@@ -120,15 +120,19 @@ extension AppDelegate: RiviumPushDelegate {
 // MARK: - UNUserNotificationCenterDelegate
 extension AppDelegate: UNUserNotificationCenterDelegate {
 
+    // Hand taps to the SDK: it reads APNs and Rivium connection payloads, reports the open
+    // (or the action click) and calls riviumPush(_:didTapNotification:) on the delegate.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        let userInfo = response.notification.request.content.userInfo
-        if let message = RiviumPushMessage.from(payload: userInfo) {
-            RiviumPush.shared.delegate?.riviumPush(RiviumPush.shared, didTapNotification: message)
-        }
+        _ = RiviumPush.shared.handleNotificationResponse(
+            userInfo: response.notification.request.content.userInfo,
+            actionIdentifier: response.actionIdentifier
+        )
         completionHandler()
     }
 
+    // Foreground APNs notification: let the SDK confirm the delivery, then show it.
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        RiviumPush.shared.handleRemoteNotification(userInfo: notification.request.content.userInfo)
         completionHandler([.banner, .sound, .badge])
     }
 }

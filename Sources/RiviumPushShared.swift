@@ -14,7 +14,7 @@ internal enum RiviumPushSDKInfo {
 
     /// Single source of truth for the SDK version. Must match both podspecs;
     /// `SdkIdentityTests` fails when they drift.
-    static let version = "0.1.18"
+    static let version = "0.1.19"
 
     /// Header carrying the SDK identity on every request.
     static let headerName = "X-Rivium-SDK"
@@ -63,15 +63,19 @@ internal enum RiviumPushSDKInfo {
 /// duplicate request, never a double count.
 internal final class DeliveryReceiptStore {
     static let storageKey = "co.rivium.push.deliveredMessageIds"
+    /// Ids of messages already shown and passed to the app (see RiviumPush.handlePushMessage).
+    static let displayedStorageKey = "co.rivium.push.displayedMessageIds"
     static let defaultCapacity = 200
 
     private let defaults: UserDefaults
     private let capacity: Int
+    private let key: String
     private let lock = NSLock()
 
-    init(defaults: UserDefaults, capacity: Int = DeliveryReceiptStore.defaultCapacity) {
+    init(defaults: UserDefaults, capacity: Int = DeliveryReceiptStore.defaultCapacity, key: String = DeliveryReceiptStore.storageKey) {
         self.defaults = defaults
         self.capacity = max(1, capacity)
+        self.key = key
     }
 
     /// Store in the App Group if available, otherwise the app's defaults.
@@ -84,11 +88,11 @@ internal final class DeliveryReceiptStore {
     /// should send the receipt, false if it was already claimed.
     func claim(_ messageId: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        var ids = defaults.stringArray(forKey: Self.storageKey) ?? []
+        var ids = defaults.stringArray(forKey: key) ?? []
         if ids.contains(messageId) { return false }
         ids.append(messageId)
         if ids.count > capacity { ids.removeFirst(ids.count - capacity) }
-        defaults.set(ids, forKey: Self.storageKey)
+        defaults.set(ids, forKey: key)
         return true
     }
 
@@ -96,14 +100,14 @@ internal final class DeliveryReceiptStore {
     /// (e.g. the app after the extension failed) may try again.
     func release(_ messageId: String) {
         lock.lock(); defer { lock.unlock() }
-        var ids = defaults.stringArray(forKey: Self.storageKey) ?? []
+        var ids = defaults.stringArray(forKey: key) ?? []
         ids.removeAll { $0 == messageId }
-        defaults.set(ids, forKey: Self.storageKey)
+        defaults.set(ids, forKey: key)
     }
 
     func contains(_ messageId: String) -> Bool {
         lock.lock(); defer { lock.unlock() }
-        return (defaults.stringArray(forKey: Self.storageKey) ?? []).contains(messageId)
+        return (defaults.stringArray(forKey: key) ?? []).contains(messageId)
     }
 }
 

@@ -50,6 +50,9 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private var isInitialized = false
     private var abTestingManager: ABTestingManager?
     private var receiptStore: DeliveryReceiptStore?
+    /// Messages already handled: the broker redelivers an unacknowledged message after a
+    /// reconnect, and the same message may come over the socket and PushKit. Show it once.
+    private let displayedStore = DeliveryReceiptStore(defaults: .standard, capacity: 500, key: DeliveryReceiptStore.displayedStorageKey)
     /// "<interaction>:<messageId>" already reported (or in flight) in this
     /// process, so a re-delivered response is not counted twice. Bounded.
     private var reportedInteractions = Set<String>()
@@ -1457,6 +1460,13 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private func handlePushMessage(_ message: RiviumPushMessage) {
         // Received over the socket or PushKit: the message is on the device.
         reportDeliveryIfNeeded(messageId: message.messageId)
+
+        // A repeat of a message already shown and passed to the app is dropped.
+        // A message without an id (older backends) is never treated as a repeat.
+        if let messageId = message.messageId, !messageId.isEmpty, !displayedStore.claim(messageId) {
+            Log.d(RiviumPush.TAG, "Repeated message ignored: \(messageId)")
+            return
+        }
 
         // Check if silent
         if message.silent {

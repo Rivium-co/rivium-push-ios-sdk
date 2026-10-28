@@ -58,6 +58,16 @@ class SettingsViewController: UIViewController {
                 Row("APNs Token", detail: String(apnsToken.prefix(20)) + "..."),
                 Row("Inbox Unread", detail: "\(unread)"),
             ]),
+            ("Registration", [
+                Row("Register", action: { [weak self] in
+                    RiviumPush.shared.register(userId: AppDelegate.savedUserId)
+                    self?.showToast("Registering…")
+                }),
+                Row("Unregister", destructive: true, action: { [weak self] in
+                    RiviumPush.shared.unregister()
+                    self?.showToast("Unregistered")
+                }),
+            ]),
             ("User Management", [
                 Row("Set User ID", action: { [weak self] in self?.setUserId() }),
                 Row("Clear User ID", destructive: true, action: { [weak self] in self?.clearUserId() }),
@@ -74,7 +84,7 @@ class SettingsViewController: UIViewController {
                 }),
             ]),
             ("About", [
-                Row("SDK Version", detail: "0.1.0"),
+                Row("SDK Version", detail: RiviumPush.sdkVersion),
                 Row("Platform", detail: "iOS \(UIDevice.current.systemVersion)"),
                 Row("Model", detail: UIDevice.current.model),
             ]),

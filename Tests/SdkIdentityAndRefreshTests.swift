@@ -144,6 +144,16 @@ final class DeliveryReceiptTests: XCTestCase {
         XCTAssertEqual(defaults.stringArray(forKey: DeliveryReceiptStore.storageKey)?.count, 3)
     }
 
+    func testDisplayedIdsAreKeptApartFromDeliveryReceipts() {
+        // A message whose receipt was already sent must still be shown once.
+        let receipts = DeliveryReceiptStore(defaults: defaults)
+        let displayed = DeliveryReceiptStore(defaults: defaults, capacity: 500, key: DeliveryReceiptStore.displayedStorageKey)
+        XCTAssertTrue(receipts.claim("m1"))
+        XCTAssertTrue(displayed.claim("m1"))
+        XCTAssertFalse(displayed.claim("m1"))
+        XCTAssertEqual(defaults.stringArray(forKey: DeliveryReceiptStore.displayedStorageKey), ["m1"])
+    }
+
     func testTransientClassification() {
         XCTAssertTrue(DeliveryReceiptSender.isTransient(statusCode: 503, error: nil))
         XCTAssertTrue(DeliveryReceiptSender.isTransient(statusCode: 429, error: nil))

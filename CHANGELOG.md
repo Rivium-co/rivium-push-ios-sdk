@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.19] - 2026-10-29
+
+### Fixed
+- A notification is shown only once, even when the same message arrives twice (for example after a reconnect, or over both the connection and PushKit).
+
 ## [0.1.18] - 2026-10-28
 
 ### Added
