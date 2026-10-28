@@ -30,7 +30,7 @@ Select version `0.1.0` or later.
 ### CocoaPods
 
 ```ruby
-pod 'RiviumPushSDK', '~> 0.1.0'
+pod 'RiviumPushSDK', '~> 0.1.19'
 ```
 
 ## Quick Start
