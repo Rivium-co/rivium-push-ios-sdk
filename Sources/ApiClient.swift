@@ -1,5 +1,30 @@
 import Foundation
 
+/// A user interaction with a shown notification, reported to Rivium Push.
+/// The raw value is the receipt endpoint.
+internal enum NotificationInteraction: String {
+    /// The user tapped the notification body.
+    case opened
+    /// The user tapped an action button.
+    case clicked
+    /// The user dismissed the notification (only reported by iOS for
+    /// categories registered with `.customDismissAction`).
+    case dismissed
+
+    static let defaultActionIdentifier = "com.apple.UNNotificationDefaultActionIdentifier"
+    static let dismissActionIdentifier = "com.apple.UNNotificationDismissActionIdentifier"
+
+    /// What a notification response means: a body tap (or no identifier),
+    /// the system dismiss action, or a tap on the action with that id.
+    static func from(actionIdentifier: String?) -> NotificationInteraction {
+        switch actionIdentifier {
+        case nil, defaultActionIdentifier?: return .opened
+        case dismissActionIdentifier?: return .dismissed
+        default: return .clicked
+        }
+    }
+}
+
 /// HTTP client for Rivium Push API
 internal class ApiClient {
     private let config: RiviumPushConfig
@@ -452,6 +477,35 @@ internal class ApiClient {
             userToken: userTokens.current(),
             maxAttempts: 3,
             timeout: NetworkConfig.requestTimeout,
+            completion: completion
+        )
+    }
+
+    /// Report a user interaction with a notification: `opened` (body tap),
+    /// `clicked` (action button, with its id) or `dismissed`. Same headers and
+    /// retry as `reportDelivered`.
+    func reportInteraction(
+        _ interaction: NotificationInteraction,
+        messageId: String,
+        deviceId: String,
+        actionId: String? = nil,
+        completion: @escaping (Bool) -> Void
+    ) {
+        var extra: [String: String] = [:]
+        if interaction == .clicked, let actionId = actionId, !actionId.isEmpty {
+            extra["actionId"] = actionId
+        }
+        DeliveryReceiptSender.send(
+            messageId: messageId,
+            deviceId: deviceId,
+            apiKey: config.apiKey,
+            serverUrl: config.serverUrl,
+            sdkHeader: config.sdkHeaderValue,
+            userToken: userTokens.current(),
+            maxAttempts: 3,
+            timeout: NetworkConfig.requestTimeout,
+            endpoint: interaction.rawValue,
+            extraFields: extra,
             completion: completion
         )
     }

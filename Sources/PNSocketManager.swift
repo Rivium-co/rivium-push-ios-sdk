@@ -4,6 +4,7 @@ import PNProtocol
 /// Manager that wraps PNSocket for the Rivium Push SDK.
 /// Replaces the old MqttManager with the new PN Protocol.
 internal class PNSocketManager: NSObject {
+    static let TAG = "PNSocketManager"
     private var socket: PNSocket?
     private let riviumPushConfig: RiviumPushConfig
     private let appId: String
@@ -94,11 +95,11 @@ internal class PNSocketManager: NSObject {
         let clientId = "rp_\(appId)_\(deviceId)_\(bundleHash)"
 
         if riviumPushConfig.pnToken == nil {
-            print("[PNSocketManager] WARNING: No PN token available - connection will likely fail with 'notAuthorized'")
+            Log.w(PNSocketManager.TAG, "No PN token available - connection will likely fail with 'notAuthorized'")
         }
 
         let pnConfig = makePNConfig(clientId: clientId)
-        print("[PNSocketManager] connect() - endpoints: \(pnConfig.endpoints)")
+        Log.d(PNSocketManager.TAG, "connect() - endpoints: \(pnConfig.endpoints)")
 
         // Initialize RiviumPush protocol (closes any previous socket first)
         PNProtocolClient.initialize(pnConfig)
@@ -110,7 +111,7 @@ internal class PNSocketManager: NSObject {
 
         // Add error listener
         socket?.addErrorListener(PNErrorHandler { error in
-            print("[PNSocketManager] Error: \(error.message)")
+            Log.e(PNSocketManager.TAG, "\(error.message)")
         })
 
         socket?.open()
@@ -124,7 +125,7 @@ internal class PNSocketManager: NSObject {
         messageHandlers.removeAll()
         hasSubscribedOnce = false  // Reset subscription state
         PNProtocolClient.shutdown()
-        print("[PNSocketManager] Disconnected")
+        Log.d(PNSocketManager.TAG, "Disconnected")
     }
 
     /// Reconnect now with the backoff reset.
@@ -133,7 +134,7 @@ internal class PNSocketManager: NSObject {
     ///   Without it a connected socket is only probed with a ping.
     /// After `disconnect()` this opens a new socket.
     func reconnectNow(force: Bool = false) {
-        print("[PNSocketManager] reconnectNow(force: \(force))")
+        Log.d(PNSocketManager.TAG, "reconnectNow(force: \(force))")
         guard let socket = socket else {
             connect()
             return
@@ -173,7 +174,11 @@ internal class PNSocketManager: NSObject {
             return PNMessageHandler { [weak self] message in
                 guard let self = self else { return }
                 let payload = message.payloadAsString()
-                print("[PNSocketManager] Message received on \(message.channel): \(payload)")
+                // Never the payload itself: it holds the app's message content.
+                Log.d(PNSocketManager.TAG, "Message received on \(message.channel) (\(payload.utf8.count) bytes)")
+                #if DEBUG
+                Log.v(PNSocketManager.TAG, "Message payload: \(payload)")
+                #endif
                 self.delegate?.pnSocketManager(self, didReceiveMessage: payload, channel: message.channel)
             }
         }
@@ -181,22 +186,22 @@ internal class PNSocketManager: NSObject {
         if let channel = subscriptionChannel {
             let subHandler = makeHandler()
             messageHandlers.append(subHandler)
-            print("[PNSocketManager] Subscribing to \(channel)")
+            Log.d(PNSocketManager.TAG, "Subscribing to \(channel)")
             socket?.stream(channel, mode: .reliable, listener: subHandler)
         }
 
         let broadcastHandler = makeHandler()
         messageHandlers.append(broadcastHandler)
-        print("[PNSocketManager] Subscribing to \(broadcastChannel)")
+        Log.d(PNSocketManager.TAG, "Subscribing to \(broadcastChannel)")
         socket?.stream(broadcastChannel, mode: .reliable, listener: broadcastHandler)
 
         // Legacy stream — DEPRECATED, see comment above.
         let deviceHandler = makeHandler()
         messageHandlers.append(deviceHandler)
-        print("[PNSocketManager] Subscribing to (deprecated) \(deviceChannel)")
+        Log.d(PNSocketManager.TAG, "Subscribing to (deprecated) \(deviceChannel)")
         socket?.stream(deviceChannel, mode: .reliable, listener: deviceHandler)
 
-        print("[PNSocketManager] Subscribed to channels (sub=\(subscriptionChannel != nil), legacy device topic kept for compat)")
+        Log.d(PNSocketManager.TAG, "Subscribed to channels (sub=\(subscriptionChannel != nil), legacy device topic kept for compat)")
     }
 
     var isConnected: Bool {
@@ -223,11 +228,11 @@ internal class PNSocketManager: NSObject {
         }
 
         func onStateChanged(_ state: PNState) {
-            print("[PNSocketManager] State: \(state)")
+            Log.d(PNSocketManager.TAG, "State: \(state)")
         }
 
         func onConnected() {
-            print("[PNSocketManager] Connected")
+            Log.d(PNSocketManager.TAG, "Connected")
             manager?.rememberConnectedEndpoint()
             // Subscribe only on the first connection.
             // On reconnects, PNSocket.resubscribeChannels() handles
@@ -236,7 +241,7 @@ internal class PNSocketManager: NSObject {
                 manager?.subscribeToChannels()
                 manager?.hasSubscribedOnce = true
             } else {
-                print("[PNSocketManager] Reconnected - PNSocket handles resubscription automatically")
+                Log.d(PNSocketManager.TAG, "Reconnected - PNSocket handles resubscription automatically")
             }
             if let manager = manager {
                 manager.delegate?.pnSocketManager(manager, didConnect: true)
@@ -244,14 +249,14 @@ internal class PNSocketManager: NSObject {
         }
 
         func onDisconnected(reason: String?) {
-            print("[PNSocketManager] Disconnected: \(reason ?? "unknown")")
+            Log.d(PNSocketManager.TAG, "Disconnected: \(reason ?? "unknown")")
             if let manager = manager {
                 manager.delegate?.pnSocketManager(manager, didDisconnect: nil)
             }
         }
 
         func onReconnecting(attempt: Int, nextRetryMs: Int) {
-            print("[PNSocketManager] Reconnecting: attempt=\(attempt)")
+            Log.d(PNSocketManager.TAG, "Reconnecting: attempt=\(attempt)")
         }
     }
 }

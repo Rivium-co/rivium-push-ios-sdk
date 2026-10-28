@@ -50,6 +50,11 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
     private var isInitialized = false
     private var abTestingManager: ABTestingManager?
     private var receiptStore: DeliveryReceiptStore?
+    /// "<interaction>:<messageId>" already reported (or in flight) in this
+    /// process, so a re-delivered response is not counted twice. Bounded.
+    private var reportedInteractions = Set<String>()
+    private var reportedInteractionOrder: [String] = []
+    private let reportedInteractionsLock = NSLock()
 
     /// Signed user token, kept in the Keychain. Lives outside `config` so a
     /// provider can be set before or after initialize().
@@ -862,6 +867,76 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Report that the user opened a notification, tapped one of its action
+    /// buttons, or dismissed it.
+    ///
+    /// `handleNotificationResponse(userInfo:actionIdentifier:)` (and the SDK's
+    /// own `UNUserNotificationCenter` delegate) already does this. Call it
+    /// only when you handle notification responses yourself without calling
+    /// `handleNotificationResponse`. Each message is reported once per kind;
+    /// runs in the background and never blocks.
+    ///
+    /// - Parameters:
+    ///   - userInfo: The notification's userInfo dictionary
+    ///   - actionIdentifier: `response.actionIdentifier`; nil means a tap on the notification body
+    @objc public func reportNotificationResponse(userInfo: [AnyHashable: Any], actionIdentifier: String? = nil) {
+        reportInteractionIfNeeded(
+            NotificationInteraction.from(actionIdentifier: actionIdentifier),
+            messageId: RiviumPushServiceExtension.messageId(from: userInfo),
+            actionId: actionIdentifier
+        )
+    }
+
+    /// Returns false when this interaction was already claimed for the message.
+    private func claimInteraction(_ key: String) -> Bool {
+        reportedInteractionsLock.lock(); defer { reportedInteractionsLock.unlock() }
+        guard !reportedInteractions.contains(key) else { return false }
+        reportedInteractions.insert(key)
+        reportedInteractionOrder.append(key)
+        if reportedInteractionOrder.count > 500 {
+            reportedInteractions.remove(reportedInteractionOrder.removeFirst())
+        }
+        return true
+    }
+
+    private func releaseInteraction(_ key: String) {
+        reportedInteractionsLock.lock(); defer { reportedInteractionsLock.unlock() }
+        reportedInteractions.remove(key)
+        reportedInteractionOrder.removeAll { $0 == key }
+    }
+
+    private func reportInteractionIfNeeded(
+        _ interaction: NotificationInteraction,
+        messageId: String?,
+        actionId: String?
+    ) {
+        guard
+            let messageId = messageId, !messageId.isEmpty,
+            let apiClient = apiClient,
+            let deviceId = deviceId
+        else { return }
+
+        let key = "\(interaction.rawValue):\(messageId)"
+        guard claimInteraction(key) else {
+            Log.d(RiviumPush.TAG, "\(interaction.rawValue) already reported: \(messageId)")
+            return
+        }
+
+        apiClient.reportInteraction(
+            interaction,
+            messageId: messageId,
+            deviceId: deviceId,
+            actionId: interaction == .clicked ? actionId : nil
+        ) { [weak self] success in
+            if success {
+                Log.d(RiviumPush.TAG, "\(interaction.rawValue) reported: \(messageId)")
+            } else {
+                self?.releaseInteraction(key)
+                Log.w(RiviumPush.TAG, "Failed to report \(interaction.rawValue): \(messageId)")
+            }
+        }
+    }
+
     // MARK: - Automatic Registration Refresh
 
     private static func isAuthorized(_ status: UNAuthorizationStatus) -> Bool {
@@ -1034,6 +1109,14 @@ public class RiviumPush: NSObject, UNUserNotificationCenterDelegate {
 
         // A tap proves delivery; covers apps without a Service Extension.
         reportDeliveryIfNeeded(messageId: RiviumPushServiceExtension.messageId(from: userInfo) ?? riviumPushMessage.messageId)
+
+        // Opened (body tap), clicked (action button) or dismissed receipt.
+        // Fire-and-forget: the app opens without waiting for it.
+        reportInteractionIfNeeded(
+            NotificationInteraction.from(actionIdentifier: actionIdentifier),
+            messageId: RiviumPushServiceExtension.messageId(from: userInfo) ?? riviumPushMessage.messageId,
+            actionId: actionIdentifier
+        )
 
         // Check for A/B test data and track click automatically
         if let data = riviumPushMessage.data,

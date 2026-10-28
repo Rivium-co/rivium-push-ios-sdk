@@ -14,7 +14,7 @@ internal enum RiviumPushSDKInfo {
 
     /// Single source of truth for the SDK version. Must match both podspecs;
     /// `SdkIdentityTests` fails when they drift.
-    static let version = "0.1.17"
+    static let version = "0.1.18"
 
     /// Header carrying the SDK identity on every request.
     static let headerName = "X-Rivium-SDK"
@@ -109,7 +109,8 @@ internal final class DeliveryReceiptStore {
 
 // MARK: - Delivery receipt sender
 
-/// POST /receipts/delivered with a small bounded retry for transient failures.
+/// POST /receipts/delivered (or another receipt endpoint: opened, clicked,
+/// dismissed) with a small bounded retry for transient failures.
 internal enum DeliveryReceiptSender {
     /// Delay before retry `attempt` (1-based): 1s, 2s, 4s… capped at 8s.
     static func backoff(forRetry attempt: Int) -> TimeInterval {
@@ -135,10 +136,15 @@ internal enum DeliveryReceiptSender {
         maxAttempts: Int,
         timeout: TimeInterval,
         session: URLSession = .shared,
+        endpoint: String = "delivered",
+        extraFields: [String: String] = [:],
         completion: @escaping (Bool) -> Void
     ) {
-        guard let url = URL(string: "\(serverUrl)/receipts/delivered"),
-              let body = try? JSONSerialization.data(withJSONObject: ["messageId": messageId, "deviceId": deviceId])
+        var fields = extraFields
+        fields["messageId"] = messageId
+        fields["deviceId"] = deviceId
+        guard let url = URL(string: "\(serverUrl)/receipts/\(endpoint)"),
+              let body = try? JSONSerialization.data(withJSONObject: fields)
         else {
             completion(false)
             return

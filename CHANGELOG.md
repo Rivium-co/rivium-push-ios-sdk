@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.18] - 2026-10-28
+
+### Added
+- Opened, clicked and dismissed tracking: a tap on a notification is reported as `opened`, a tap on an action button as `clicked` (with the action's id). `dismissed` is reported when iOS tells the app, which it does only for notification categories registered with `.customDismissAction`. Done automatically by `handleNotificationResponse(userInfo:actionIdentifier:)` and the SDK's own notification delegate; sent in the background once per message and never delays opening the app.
+- `reportNotificationResponse(userInfo:actionIdentifier:)` for apps that handle notification responses themselves without calling `handleNotificationResponse`.
+
+### Changed
+- Connection logs now follow `RiviumPushLogger.logLevel` instead of always printing, and never include message content outside debug builds.
+
 ## [0.1.17] - 2026-10-14
 
 ### Added
